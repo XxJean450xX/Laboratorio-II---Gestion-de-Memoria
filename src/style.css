@@ -1,0 +1,243 @@
+:root {
+      --bg-dark: #0f172a;
+      --panel-bg: #1e293b;
+      --card-bg: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #475569;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background-color: var(--panel-bg);
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      color: var(--accent);
+    }
+
+    /* Etapa 1: Formulario de Configuración */
+    .config-container {
+      max-width: 650px;
+      margin: 2rem auto;
+      background: var(--panel-bg);
+      padding: 2rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    }
+
+    .form-group {
+      margin-bottom: 1.2rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.4rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .form-group select, 
+    .form-group input {
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-size: 1rem;
+    }
+
+    .dynamic-field {
+      display: none;
+      padding: 1rem;
+      background: rgba(0,0,0,0.2);
+      border-radius: 4px;
+      margin-top: 0.5rem;
+    }
+
+    .btn-primary {
+      width: 100%;
+      padding: 0.75rem;
+      background: var(--accent);
+      color: #000;
+      font-weight: bold;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: #fff;
+    }
+
+    /* Etapa 2: Layout Dashboard de Simulación */
+    .simulation-layout {
+      display: none;
+      grid-template-columns: 300px 1fr 320px;
+      gap: 1rem;
+      padding: 1rem;
+      flex-grow: 1;
+      height: calc(100vh - 60px);
+    }
+
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+
+    /* Panel Izquierdo: Administrador de Tareas / Programas */
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      overflow-y: auto;
+    }
+
+    .task-card {
+      background: var(--card-bg);
+      padding: 0.8rem;
+      border-radius: 6px;
+      border-left: 4px solid var(--accent);
+    }
+
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+      margin-bottom: 0.3rem;
+    }
+
+    .task-details {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .task-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-sm {
+      padding: 0.3rem 0.6rem;
+      font-size: 0.75rem;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      color: white;
+    }
+
+    .btn-start { background: var(--success); }
+    .btn-stop { background: var(--danger); }
+
+    /* Panel Centro: Tabla de Particiones */
+    .table-container {
+      overflow-y: auto;
+      flex-grow: 1;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      padding: 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--card-bg);
+      color: var(--accent);
+      position: sticky;
+      top: 0;
+    }
+
+    .badge {
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+
+    .badge-free { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+    .badge-busy { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+
+    /* Panel Derecho: Pila / Mapa de Memoria */
+    .memory-stack {
+      flex-grow: 1;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      background: #000;
+      position: relative;
+    }
+
+    .memory-block {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .memory-block.os { background: #475569; }
+    .memory-block.free { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+    .memory-block.allocated { background: rgba(56, 189, 248, 0.3); border-left: 4px solid var(--accent); }
+
+    .hex-addr {
+      font-weight: bold;
+      opacity: 0.8;
+    }
