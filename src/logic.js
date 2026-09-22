@@ -1,341 +1,582 @@
-// memoria total 16 MiB = 16384 KiB
-    const TOTAL_MEMORY_KIB = 16384;
+/* ---------------------------------------------------------------
+   constantes generales del sistema
+--------------------------------------------------------------- */
+const KIB = 1024;
+const MEMORIA_TOTAL = 16 * 1024 * 1024;
+const ENCABEZADO_EXE = 1 * KIB;
 
-    // 5 Programas predeterminados con distribución interna de segmentos
-    const preconfiguredPrograms = [
-      { id: 'P1', name: 'Navegador Web', segments: { text: 512, data: 1024, stack: 512 }, totalSize: 2048, running: false, startAddr: null },
-      { id: 'P2', name: 'Editor de Texto', segments: { text: 256, data: 256, stack: 512 }, totalSize: 1024, running: false, startAddr: null },
-      { id: 'P3', name: 'Reproductor SQL', segments: { text: 1024, data: 2048, stack: 1024 }, totalSize: 4096, running: false, startAddr: null },
-      { id: 'P4', name: 'Antivirus CLI', segments: { text: 128, data: 256, stack: 128 }, totalSize: 512, running: false, startAddr: null },
-      { id: 'P5', name: 'IDE Desarrollo', segments: { text: 1024, data: 1536, stack: 512 }, totalSize: 3072, running: false, startAddr: null }
-    ];
+/* ---------------------------------------------------------------
+   estado global de la simulación
+--------------------------------------------------------------- */
+let config = {};
+let particiones = [];
+let procesos = [];
+let idParticiones = 0;
+let idProcesos = 0;
 
-    let config = {};
-    let memoryLayout = [];
+/* ---------------------------------------------------------------
+   utilidades
+--------------------------------------------------------------- */
+function aBytes(kib) {
+  return Math.round(kib * KIB);
+}
 
-    function handleTypeChange() {
-      const type = document.getElementById('mem-type').value;
-      document.querySelectorAll('.dynamic-field').forEach(el => el.style.display = 'none');
-      
-      if (type === 'fixed-static') {
-        document.getElementById('field-fixed-static').style.display = 'block';
-      } else if (type === 'variable-static') {
-        document.getElementById('field-variable-static').style.display = 'block';
-      } else if (type === 'dynamic') {
-        document.getElementById('field-dynamic').style.display = 'block';
-      }
-    }
+function aKiB(bytes) {
+  const v = bytes / KIB;
+  return Number.isInteger(v) ? v : v.toFixed(1);
+}
 
-    function toHex(kibAddress) {
-      // Convierte dirección en KiB a representación Hexadecimal (0x000000 - 0xFFFFFF)
-      const bytes = kibAddress * 1024;
-      return '0x' + bytes.toString(16).padStart(6, '0').toUpperCase();
-    }
+function aHex(valor) {
+  return "0x" + valor.toString(16).toUpperCase().padStart(6, "0");
+}
 
-    function startSimulation() {
-      const type = document.getElementById('mem-type').value;
-      const osSize = parseInt(document.getElementById('os-size').value) || 2048;
-      const algorithm = document.getElementById('fit-algorithm').value;
+function mostrarMensaje(texto) {
+  const contenedor = document.getElementById("toast");
+  if (!contenedor) return;
+  const item = document.createElement("div");
+  item.className = "toast-item";
+  item.textContent = texto;
+  contenedor.appendChild(item);
+  setTimeout(() => item.remove(), 4000);
+}
 
-      config = { type, osSize, algorithm };
+/* ---------------------------------------------------------------
+   pantalla de configuración: mostrar/ocultar secciones según tipo
+--------------------------------------------------------------- */
+const selectorTipo = document.getElementById("tipoGestion");
+if (selectorTipo) {
+  selectorTipo.addEventListener("change", actualizarSeccionesConfig);
+}
 
-      // Cambiar de Etapa
-      document.getElementById('setup-stage').style.display = 'none';
-      document.getElementById('simulation-stage').style.display = 'grid';
-      document.getElementById('current-mode-label').innerText = `Modo: ${type} | Algoritmo: ${algorithm}`;
+function actualizarSeccionesConfig() {
+  if (!selectorTipo) return;
+  const tipo = selectorTipo.value;
+  document
+    .getElementById("seccionFija")
+    ?.classList.toggle("oculto", tipo !== "fija");
+  document
+    .getElementById("seccionVariable")
+    ?.classList.toggle("oculto", tipo !== "variable");
+  document
+    .getElementById("seccionDinamica")
+    ?.classList.toggle("oculto", tipo !== "dinamica");
+  document
+    .getElementById("seccionAlgoritmo")
+    ?.classList.toggle("oculto", tipo === "fija");
+}
+actualizarSeccionesConfig();
 
-      // Inicializar tabla/mapa de particiones con la sección del SO
-      initMemoryLayout();
-      renderTasks();
-      renderSimulationUI();
-    }
+// generar campos de tamaño para particiones de tamaño variable
+const camposVariable = [4096, 2048, 1024, 512];
+const inputNumVariable = document.getElementById("numParticionesVariable");
+if (inputNumVariable) {
+  inputNumVariable.addEventListener("input", generarCamposVariable);
+}
 
-    function initMemoryLayout() {
-      memoryLayout = [];
-      let currentAddr = 0;
+function generarCamposVariable() {
+  if (!inputNumVariable) return;
+  const cantidad = parseInt(inputNumVariable.value) || 0;
+  const contenedor = document.getElementById("listaTamanosVariable");
+  if (!contenedor) return;
+  contenedor.innerHTML = "";
+  for (let i = 0; i < cantidad; i++) {
+    const fila = document.createElement("div");
+    fila.className = "tamano-variable-item";
+    const valorPredeterminado = camposVariable[i] ?? 512;
+    fila.innerHTML = `<span>Partición ${i + 1}</span><input type="number" class="tamanoVariableInput" value="${valorPredeterminado}" min="1">`;
+    contenedor.appendChild(fila);
+  }
+}
+generarCamposVariable();
 
-      // Partición reservada para el Sistema Operativo
-      memoryLayout.push({
-        id: 'OS',
-        startAddr: currentAddr,
-        size: config.osSize,
-        process: 'Sistema Operativo',
-        free: false,
-        fragInternal: 0
-      });
+/* ---------------------------------------------------------------
+   iniciar simulación a partir del formulario de configuración
+--------------------------------------------------------------- */
+document.getElementById("botonIniciar")?.addEventListener("click", () => {
+  const errorBox = document.getElementById("errorConfig");
+  if (errorBox) errorBox.textContent = "";
 
-      currentAddr += config.osSize;
-      const userMemory = TOTAL_MEMORY_KIB - config.osSize;
+  const tipo = selectorTipo ? selectorTipo.value : "dinamica";
+  const memoriaSO = aBytes(
+    parseFloat(document.getElementById("memoriaSO")?.value) || 0,
+  );
+  const pila = aBytes(
+    parseFloat(document.getElementById("tamPila")?.value) || 0,
+  );
+  const monticulo = aBytes(
+    parseFloat(document.getElementById("tamMonticulo")?.value) || 0,
+  );
+  const disponible = MEMORIA_TOTAL - memoriaSO;
 
-      if (config.type === 'fixed-static') {
-        const blockSize = parseInt(document.getElementById('block-size').value) || 2048;
-        let count = 1;
-        while (currentAddr + blockSize <= TOTAL_MEMORY_KIB) {
-          memoryLayout.push({
-            id: `Partición ${count++}`,
-            startAddr: currentAddr,
-            size: blockSize,
-            process: null,
-            free: true,
-            fragInternal: 0
-          });
-          currentAddr += blockSize;
-        }
-      } else if (config.type === 'variable-static') {
-        const sizesInput = document.getElementById('partition-sizes').value;
-        const sizes = sizesInput.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s));
-        
-        sizes.forEach((sz, idx) => {
-          if (currentAddr + sz <= TOTAL_MEMORY_KIB) {
-            memoryLayout.push({
-              id: `Partición ${idx + 1}`,
-              startAddr: currentAddr,
-              size: sz,
-              process: null,
-              free: true,
-              fragInternal: 0
-            });
-            currentAddr += sz;
-          }
-        });
-      } else if (config.type === 'dynamic') {
-        // En dinámicas inicia como un gran bloque libre de memoria del usuario
-        memoryLayout.push({
-          id: 'Bloque Libre',
-          startAddr: currentAddr,
-          size: userMemory,
-          process: null,
-          free: true,
-          fragInternal: 0
-        });
-      }
-    }
-
-    // Función auxiliar para actualizar en tiempo real el tamaño total mientras escribes los segmentos
-    function calculateTotalProgSize() {
-      const text = parseInt(document.getElementById('new-prog-text').value) || 0;
-      const data = parseInt(document.getElementById('new-prog-data').value) || 0;
-      const heap = parseInt(document.getElementById('new-prog-heap').value) || 0;
-      const stack = parseInt(document.getElementById('new-prog-stack').value) || 0;
-      
-      const total = text + data + heap + stack;
-      document.getElementById('preview-total-size').innerText = `${total} KiB`;
-    }
-
-    function renderTasks() {
-      const container = document.getElementById('task-list');
-      container.innerHTML = '';
-
-      preconfiguredPrograms.forEach(prog => {
-        const card = document.createElement('div');
-        card.className = 'task-card';
-        card.innerHTML = `
-          <div class="task-header">
-            <span>${prog.name} (${prog.id})</span>
-            <span style="font-size: 0.8rem; color: var(--accent);">${prog.totalSize} KiB</span>
-          </div>
-          <div class="task-details">
-            Code (${prog.segments.text}K) | Data (${prog.segments.data}K) | Heap (${prog.segments.heap || 0}K) | Stack (${prog.segments.stack}K)
-          </div>
-          <div class="task-actions">
-            ${!prog.running 
-              ? `<button class="btn-sm btn-start" onclick="launchProgram('${prog.id}')">Ejecutar</button>`
-              : `<button class="btn-sm btn-stop" onclick="terminateProgram('${prog.id}')">Finalizar</button>`
-            }
-          </div>
-        `;
-        container.appendChild(card);
-      });
-    }
-
-    function launchProgram(progId) {
-      const prog = preconfiguredPrograms.find(p => p.id === progId);
-      if (!prog) return;
-
-      // Lógica de asignación según el método y el algoritmo (First, Best, Worst Fit)
-      // AQUÍ IMPLEMENTARÁS LOS ALGORITMOS ESPECÍFICOS DE ASIGNACIÓN
-      
-      alert(`Asignando memoria para ${prog.name}... (Implementar algoritmo de asignación seleccionando en memoryLayout)`);
-      
-      // Simulación rápida de asignación
-      prog.running = true;
-      renderTasks();
-      renderSimulationUI();
-    }
-
-    function terminateProgram(progId) {
-      const prog = preconfiguredPrograms.find(p => p.id === progId);
-      if (!prog) return;
-
-      prog.running = false;
-      // Liberar en memoryLayout
-      renderTasks();
-      renderSimulationUI();
-    }
-
-    function renderSimulationUI() {
-      // 1. Renderizar Tabla de Particiones
-      const tableBody = document.getElementById('partition-table-body');
-      tableBody.innerHTML = '';
-
-      memoryLayout.forEach(part => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${part.id} <br><small style="color: var(--text-muted);">${toHex(part.startAddr)}</small></td>
-          <td>${part.size} KiB</td>
-          <td>${part.process ? part.process : '---'}</td>
-          <td>${part.fragInternal > 0 ? part.fragInternal + ' KiB' : '0 KiB'}</td>
-          <td>
-            <span class="badge ${part.free ? 'badge-free' : 'badge-busy'}">
-              ${part.free ? 'LIBRE' : 'OCUPADO'}
-            </span>
-          </td>
-        `;
-        tableBody.appendChild(tr);
-      });
-
-      // 2. Renderizar Pila/Mapa Físico de Memoria
-      const stackContainer = document.getElementById('memory-stack');
-      stackContainer.innerHTML = '';
-
-      memoryLayout.forEach(part => {
-        const block = document.createElement('div');
-        const heightPercent = (part.size / TOTAL_MEMORY_KIB) * 100;
-        
-        block.className = `memory-block ${part.id === 'OS' ? 'os' : (part.free ? 'free' : 'allocated')}`;
-        block.style.height = `${Math.max(heightPercent, 5)}%`; // altura visual proporcional
-        
-        block.innerHTML = `
-          <div>
-            <strong>${part.id}</strong> - ${part.process ? part.process : 'Vacío'} (${part.size} KiB)
-          </div>
-          <div class="hex-addr">${toHex(part.startAddr)}</div>
-        `;
-        stackContainer.appendChild(block);
-      });
-    }
-
-    function launchProgram(progId) {
-  const prog = preconfiguredPrograms.find(p => p.id === progId);
-  if (!prog) return;
-
-  const algorithm = config.algorithm; // 'first-fit', 'best-fit', 'worst-fit'
-  let targetPartition = null;
-
-  // 1. Filtrar bloques libres que tengan espacio suficiente para el programa
-  const freeBlocks = memoryLayout.filter(part => part.free && part.size >= prog.totalSize);
-
-  if (freeBlocks.length === 0) {
-    alert(`No hay suficiente memoria libre (o partición adecuada) para ejecutar ${prog.name}.`);
+  if (memoriaSO < 0 || memoriaSO >= MEMORIA_TOTAL) {
+    if (errorBox)
+      errorBox.textContent =
+        "La memoria reservada para el sistema operativo no es válida.";
     return;
   }
 
-  // 2. Aplicar el algoritmo de ajuste seleccionado
-  if (algorithm === 'first-fit') {
-    // El primero que encuentra
-    targetPartition = freeBlocks[0];
-  } 
-  else if (algorithm === 'best-fit') {
-    // El que tenga el tamaño más cercano (menor desperdicio)
-    targetPartition = freeBlocks.reduce((prev, curr) => (curr.size < prev.size) ? curr : prev);
-  } 
-  else if (algorithm === 'worst-fit') {
-    // El que tenga el mayor tamaño disponible
-    targetPartition = freeBlocks.reduce((prev, curr) => (curr.size > prev.size) ? curr : prev);
-  }
+  const elAlgoritmo = document.getElementById("algoritmoAsignacion");
+  config = {
+    tipo,
+    memoriaSO,
+    pila,
+    monticulo,
+    algoritmo: elAlgoritmo ? elAlgoritmo.value : "primer",
+  };
 
-  // 3. Asignar el programa a la partición encontrada
-  if (targetPartition) {
-    targetPartition.free = false;
-    targetPartition.process = `${prog.name} (${prog.id})`;
-    
-    // Calcular fragmentación interna (si sobra espacio en la partición fija)
-    if (config.type === 'fixed-static' || config.type === 'variable-static') {
-      targetPartition.fragInternal = targetPartition.size - prog.totalSize;
-    } else {
-      targetPartition.fragInternal = 0;
-      // Nota: Si estás en modo dinámico puro, aquí podrías subdividir el bloque libre restante, 
-      // pero para empezar, marcar el bloque como ocupado actualizará tu interfaz visualmente.
+  if (tipo === "fija") {
+    config.numParticiones =
+      parseInt(document.getElementById("numParticionesFija")?.value) || 0;
+    config.tamParticion = aBytes(
+      parseFloat(document.getElementById("tamParticionFija")?.value) || 0,
+    );
+    if (config.numParticiones <= 0 || config.tamParticion <= 0) {
+      if (errorBox)
+        errorBox.textContent =
+          "Define un número y tamaño de partición válidos.";
+      return;
     }
-
-    prog.running = true;
-    renderTasks();
-    renderSimulationUI();
+  } else if (tipo === "variable") {
+    const entradas = Array.from(
+      document.querySelectorAll(".tamanoVariableInput"),
+    );
+    config.tamañosParticiones = entradas.map((e) =>
+      aBytes(parseFloat(e.value) || 0),
+    );
+    const suma = config.tamañosParticiones.reduce((a, b) => a + b, 0);
+    if (config.tamañosParticiones.some((t) => t <= 0)) {
+      if (errorBox)
+        errorBox.textContent =
+          "Todos los tamaños de partición deben ser mayores a cero.";
+      return;
+    }
+    if (suma > disponible) {
+      if (errorBox)
+        errorBox.textContent =
+          "La suma de las particiones supera la memoria disponible (" +
+          aKiB(disponible) +
+          " KiB).";
+      return;
+    }
+  } else if (tipo === "dinamica") {
+    const radioCompactacion = document.querySelector(
+      "input[name=compactacion]:checked",
+    );
+    config.compactacion = radioCompactacion
+      ? radioCompactacion.value === "si"
+      : false;
   }
+
+  inicializarSimulacion();
+});
+
+/* ---------------------------------------------------------------
+   construir el mapa inicial de particiones
+--------------------------------------------------------------- */
+function crearParticionesIniciales() {
+  particiones = [];
+  idParticiones = 0;
+  let base = config.memoriaSO;
+  const disponible = MEMORIA_TOTAL - config.memoriaSO;
+
+  if (config.tipo === "fija") {
+    for (let i = 0; i < config.numParticiones; i++) {
+      if (base + config.tamParticion > MEMORIA_TOTAL) break;
+      particiones.push(crearParticion(base, config.tamParticion));
+      base += config.tamParticion;
+    }
+  } else if (config.tipo === "variable") {
+    config.tamañosParticiones.forEach((tam) => {
+      if (base + tam > MEMORIA_TOTAL) return;
+      particiones.push(crearParticion(base, tam));
+      base += tam;
+    });
+  } else {
+    // dinámica: un único bloque libre que cubre toda la memoria disponible
+    particiones.push(crearParticion(base, disponible));
+    return;
+  }
+
+  // el espacio restante, si lo hay, queda como una partición libre adicional
+  const restante = MEMORIA_TOTAL - base;
+  if (restante > 0) particiones.push(crearParticion(base, restante));
 }
 
-function terminateProgram(progId) {
-  const prog = preconfiguredPrograms.find(p => p.id === progId);
-  if (!prog) return;
+function crearParticion(base, tamano) {
+  return {
+    id: ++idParticiones,
+    base,
+    tamano,
+    estado: "libre",
+    procesoId: null,
+  };
+}
 
-  // Buscar la partición que contiene este programa y liberarla
-  memoryLayout.forEach(part => {
-    if (part.process && part.process.includes(`(${prog.id})`)) {
-      part.free = true;
-      part.process = null;
-      part.fragInternal = 0;
+/* ---------------------------------------------------------------
+   procesos precargados
+--------------------------------------------------------------- */
+function crearProcesosPrecargados() {
+  procesos = [];
+  idProcesos = 0;
+  const base = [
+    {
+      nombre: "explorador.exe",
+      codigo: 120,
+      datosIni: 30,
+      datosNoIni: 50,
+    },
+    {
+      nombre: "bloc_notas.exe",
+      codigo: 45,
+      datosIni: 10,
+      datosNoIni: 15,
+    },
+    {
+      nombre: "calculadora.exe",
+      codigo: 30,
+      datosIni: 8,
+      datosNoIni: 12,
+    },
+    {
+      nombre: "reproductor.exe",
+      codigo: 200,
+      datosIni: 60,
+      datosNoIni: 100,
+    },
+    {
+      nombre: "navegador.exe",
+      codigo: 500,
+      datosIni: 150,
+      datosNoIni: 300,
+    },
+  ];
+  base.forEach((p) =>
+    agregarProceso(p.nombre, p.codigo, p.datosIni, p.datosNoIni, true),
+  );
+}
+
+function agregarProceso(
+  nombre,
+  codigoKiB,
+  datosIniKiB,
+  datosNoIniKiB,
+  precargado = false,
+) {
+  const codigo = aBytes(codigoKiB);
+  const datosIni = aBytes(datosIniKiB);
+  const datosNoIni = aBytes(datosNoIniKiB);
+  const memInicial = codigo + datosIni + datosNoIni;
+  const memAUsar = memInicial + config.pila + config.monticulo + ENCABEZADO_EXE;
+  procesos.push({
+    id: ++idProcesos,
+    nombre,
+    codigo,
+    datosIni,
+    datosNoIni,
+    memInicial,
+    memAUsar,
+    estado: "detenido",
+    particionId: null,
+    base: null,
+    limite: null,
+    precargado,
+  });
+}
+
+/* ---------------------------------------------------------------
+   algoritmos de asignación
+--------------------------------------------------------------- */
+function elegirParticionLibre(candidatas) {
+  if (candidatas.length === 0) return null;
+  if (config.algoritmo === "mejor")
+    return candidatas.reduce((a, b) => (b.tamano < a.tamano ? b : a));
+  if (config.algoritmo === "peor")
+    return candidatas.reduce((a, b) => (b.tamano > a.tamano ? b : a));
+  return candidatas[0]; // primer ajuste
+}
+
+/* ---------------------------------------------------------------
+   iniciar / detener procesos
+--------------------------------------------------------------- */
+function iniciarProceso(id) {
+  const proceso = procesos.find((p) => p.id === id);
+  if (!proceso || proceso.estado === "ejecutando") return;
+
+  const candidatas = particiones.filter(
+    (p) => p.estado === "libre" && p.tamano >= proceso.memAUsar,
+  );
+  const elegida = elegirParticionLibre(candidatas);
+  if (!elegida) {
+    mostrarMensaje("No hay espacio suficiente para " + proceso.nombre + ".");
+    return;
+  }
+
+  if (config.tipo === "dinamica") {
+    // Asegurar orden espacial antes de calcular sobrantes e índices
+    particiones.sort((a, b) => a.base - b.base);
+    const sobrante = elegida.tamano - proceso.memAUsar;
+    elegida.tamano = proceso.memAUsar;
+    elegida.estado = "ocupada";
+    elegida.procesoId = proceso.id;
+
+    if (sobrante > 0) {
+      const posicion = particiones.indexOf(elegida) + 1;
+      particiones.splice(
+        posicion,
+        0,
+        crearParticion(elegida.base + elegida.tamano, sobrante),
+      );
     }
+  } else {
+    elegida.estado = "ocupada";
+    elegida.procesoId = proceso.id;
+  }
+
+  proceso.estado = "ejecutando";
+  proceso.particionId = elegida.id;
+  proceso.base = elegida.base;
+  proceso.limite = elegida.base + elegida.tamano - 1;
+
+  renderizarTodo();
+}
+
+function detenerProceso(id) {
+  const proceso = procesos.find((p) => p.id === id);
+  if (!proceso || proceso.estado === "detenido") return;
+
+  const particion = particiones.find((p) => p.id === proceso.particionId);
+  if (particion) {
+    particion.estado = "libre";
+    particion.procesoId = null;
+  }
+
+  if (config.tipo === "dinamica") {
+    fusionarHuecosAdyacentes();
+    if (config.compactacion) compactarMemoria();
+  }
+
+  proceso.estado = "detenido";
+  proceso.particionId = null;
+  proceso.base = null;
+  proceso.limite = null;
+
+  renderizarTodo();
+}
+
+function fusionarHuecosAdyacentes() {
+  particiones.sort((a, b) => a.base - b.base);
+  particiones = particiones.reduce((acc, curr) => {
+    const prev = acc[acc.length - 1];
+    if (prev && prev.estado === "libre" && curr.estado === "libre") {
+      prev.tamano += curr.tamano;
+    } else {
+      acc.push(curr);
+    }
+    return acc;
+  }, []);
+}
+
+function compactarMemoria() {
+  particiones.sort((a, b) => a.base - b.base);
+  let base = config.memoriaSO;
+  const nuevas = [];
+
+  particiones
+    .filter((p) => p.estado === "ocupada")
+    .forEach((p) => {
+      p.base = base;
+      nuevas.push(p);
+      base += p.tamano;
+      const proceso = procesos.find((pr) => pr.id === p.procesoId);
+      if (proceso) {
+        proceso.base = p.base;
+        proceso.limite = p.base + p.tamano - 1;
+      }
+    });
+
+  const restante = MEMORIA_TOTAL - base;
+  if (restante > 0) nuevas.push(crearParticion(base, restante));
+  particiones = nuevas;
+}
+
+/* ---------------------------------------------------------------
+   render: tabla de procesos
+--------------------------------------------------------------- */
+function renderizarProcesos() {
+  const cuerpo = document.getElementById("cuerpoTablaProcesos");
+  if (!cuerpo) return;
+  cuerpo.innerHTML = "";
+  procesos.forEach((p) => {
+    const fila = document.createElement("tr");
+    const insignia =
+      p.estado === "ejecutando"
+        ? '<span class="insignia insignia-ejecutando">Ejecutando</span>'
+        : '<span class="insignia insignia-detenido">Detenido</span>';
+    const boton =
+      p.estado === "ejecutando"
+        ? `<button class="boton-pequeno" onclick="detenerProceso(${p.id})">Detener</button>`
+        : `<button class="boton-pequeno" onclick="iniciarProceso(${p.id})">Iniciar</button>`;
+    fila.innerHTML = `
+      <td>${p.nombre}${p.precargado ? '<div class="etiqueta-precargado">precargado</div>' : ""}</td>
+      <td>${aKiB(p.codigo)}</td>
+      <td>${aKiB(p.datosIni)}</td>
+      <td>${aKiB(p.datosNoIni)}</td>
+      <td>${aKiB(p.memInicial)}</td>
+      <td>${aKiB(p.memAUsar)}</td>
+      <td>${insignia}</td>
+      <td>${boton}</td>`;
+    cuerpo.appendChild(fila);
+  });
+}
+
+/* ---------------------------------------------------------------
+   render: tabla de particiones
+--------------------------------------------------------------- */
+function renderizarParticiones() {
+  const cuerpo = document.getElementById("cuerpoTablaParticiones");
+  if (!cuerpo) return;
+  cuerpo.innerHTML = "";
+  particiones
+    .slice()
+    .sort((a, b) => a.base - b.base)
+    .forEach((part) => {
+      const proceso = procesos.find((p) => p.id === part.procesoId);
+      const insignia =
+        part.estado === "ocupada"
+          ? '<span class="insignia insignia-ocupada">Ocupada</span>'
+          : '<span class="insignia insignia-libre">Libre</span>';
+      const fila = document.createElement("tr");
+      fila.innerHTML = `
+      <td>P${part.id}</td>
+      <td class="direccion">${aHex(part.base)}</td>
+      <td class="direccion">${aHex(part.base + part.tamano - 1)}</td>
+      <td>${aKiB(part.tamano)} KiB</td>
+      <td>${insignia}</td>
+      <td>${proceso ? proceso.nombre : "-"}</td>`;
+      cuerpo.appendChild(fila);
+    });
+}
+
+/* ---------------------------------------------------------------
+   render: mapa de memoria vertical
+--------------------------------------------------------------- */
+function renderizarMapaMemoria() {
+  const contenedor = document.getElementById("mapaMemoria");
+  if (!contenedor) return;
+  contenedor.innerHTML = "";
+
+  const bloqueSO = document.createElement("div");
+  bloqueSO.className = "bloque-mapa bloque-so";
+  bloqueSO.style.flex = config.memoriaSO / MEMORIA_TOTAL;
+  bloqueSO.innerHTML = `<div class="direcciones"><span>${aHex(0)}</span><span>${aHex(config.memoriaSO - 1)}</span></div><span>SO (${aKiB(config.memoriaSO)} KiB)</span>`;
+  contenedor.appendChild(bloqueSO);
+
+  particiones
+    .slice()
+    .sort((a, b) => a.base - b.base)
+    .forEach((part) => {
+      const proceso = procesos.find((p) => p.id === part.procesoId);
+      const bloque = document.createElement("div");
+      bloque.className =
+        "bloque-mapa " +
+        (part.estado === "ocupada" ? "bloque-ocupado" : "bloque-libre");
+      bloque.style.flex = part.tamano / MEMORIA_TOTAL;
+      const etiqueta = part.estado === "ocupada" ? proceso.nombre : "Libre";
+      bloque.innerHTML = `<div class="direcciones"><span>${aHex(part.base)}</span><span>${aHex(part.base + part.tamano - 1)}</span></div><span>${etiqueta}</span>`;
+      contenedor.appendChild(bloque);
+    });
+}
+
+function renderizarTodo() {
+  renderizarProcesos();
+  renderizarParticiones();
+  renderizarMapaMemoria();
+}
+
+/* ---------------------------------------------------------------
+   modal para agregar un nuevo programa
+--------------------------------------------------------------- */
+const modal = document.getElementById("modalAgregarPrograma");
+document
+  .getElementById("botonAgregarPrograma")
+  ?.addEventListener("click", () => {
+    const errBox = document.getElementById("errorModal");
+    if (errBox) errBox.textContent = "";
+    modal?.classList.remove("oculto");
   });
 
-  prog.running = false;
-  renderTasks();
-  renderSimulationUI();
+document
+  .getElementById("botonCancelarModal")
+  ?.addEventListener("click", () => modal?.classList.add("oculto"));
+
+document
+  .getElementById("botonConfirmarModal")
+  ?.addEventListener("click", () => {
+    const nombre = document.getElementById("campoNombrePrograma")?.value.trim();
+    const codigo = parseFloat(
+      document.getElementById("campoCodigoPrograma")?.value,
+    );
+    const datosIni = parseFloat(
+      document.getElementById("campoDatosIniPrograma")?.value,
+    );
+    const datosNoIni = parseFloat(
+      document.getElementById("campoDatosNoIniPrograma")?.value,
+    );
+    const errorModal = document.getElementById("errorModal");
+
+    if (!nombre) {
+      if (errorModal)
+        errorModal.textContent = "Ingresa un nombre para el programa.";
+      return;
+    }
+    if ([codigo, datosIni, datosNoIni].some((v) => isNaN(v) || v < 0)) {
+      if (errorModal)
+        errorModal.textContent = "Los tamaños deben ser números válidos.";
+      return;
+    }
+
+    agregarProceso(nombre, codigo, datosIni, datosNoIni, false);
+    renderizarProcesos();
+    modal?.classList.add("oculto");
+  });
+
+/* ---------------------------------------------------------------
+   arranque de la simulación y reinicio
+--------------------------------------------------------------- */
+function inicializarSimulacion() {
+  crearParticionesIniciales();
+  crearProcesosPrecargados();
+
+  const nombresTipo = {
+    fija: "Particiones fijas",
+    variable: "Particiones variables",
+    dinamica: "Particiones dinámicas",
+  };
+  const nombresAlgoritmo = {
+    primer: "Primer ajuste",
+    mejor: "Mejor ajuste",
+    peor: "Peor ajuste",
+  };
+  let resumen = `<strong>${nombresTipo[config.tipo]}</strong> · SO: ${aKiB(config.memoriaSO)} KiB`;
+  if (config.tipo !== "fija")
+    resumen += ` · Algoritmo: ${nombresAlgoritmo[config.algoritmo]}`;
+  if (config.tipo === "dinamica")
+    resumen += ` · ${config.compactacion ? "Con compactación automática" : "Sin compactación"}`;
+
+  const resumenElem = document.getElementById("resumenConfig");
+  if (resumenElem) resumenElem.innerHTML = resumen;
+
+  document.getElementById("vistaConfiguracion")?.classList.add("oculto");
+  document.getElementById("vistaDashboard")?.classList.remove("oculto");
+  renderizarTodo();
 }
 
-function addNewProgram() {
-      const nameInput = document.getElementById('new-prog-name');
-      const textInput = document.getElementById('new-prog-text');
-      const dataInput = document.getElementById('new-prog-data');
-      const heapInput = document.getElementById('new-prog-heap');
-      const stackInput = document.getElementById('new-prog-stack');
+document
+  .getElementById("botonReiniciar")
+  ?.addEventListener("click", () => location.reload());
 
-      const name = nameInput.value.trim();
-      const text = parseInt(textInput.value) || 0;
-      const data = parseInt(dataInput.value) || 0;
-      const heap = parseInt(heapInput.value) || 0;
-      const stack = parseInt(stackInput.value) || 0;
-
-      const totalSize = text + data + heap + stack;
-
-      // Validaciones robustas
-      if (!name) {
-        alert('Por favor, ingresa un nombre para el programa.');
-        return;
-      }
-      if (totalSize <= 0) {
-        alert('El programa debe tener al menos una sección con tamaño mayor a 0 KiB.');
-        return;
-      }
-
-      // Generar ID consecutivo
-      const newId = `P${preconfiguredPrograms.length + 1}`;
-
-      // Crear el nuevo objeto estructurado con las secciones solicitadas por el profe
-      const newProgram = {
-        id: newId,
-        name: name,
-        segments: { 
-          text: text, 
-          data: data, 
-          heap: heap, 
-          stack: stack 
-        },
-        totalSize: totalSize,
-        running: false,
-        startAddr: null
-      };
-
-      // Añadir al arreglo de programas
-      preconfiguredPrograms.push(newProgram);
-
-      // Limpiar campos del formulario y previsualización
-      nameInput.value = '';
-      textInput.value = '';
-      dataInput.value = '';
-      heapInput.value = '';
-      stackInput.value = '';
-      document.getElementById('preview-total-size').innerText = '0 KiB';
-
-      // Actualizar interfaz
-      renderTasks();
-    }
+/* ---------------------------------------------------------------
+   Exposición explícita al scope global para listeners de HTML
+--------------------------------------------------------------- */
+window.iniciarProceso = iniciarProceso;
+window.detenerProceso = detenerProceso;
