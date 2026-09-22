@@ -1,151 +1,230 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulador de Gestión de Memoria - SO</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="logic.js"></script>
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulador de Gestión de Memoria</title>
+    <script src="logic.js" defer></script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- ================= PANTALLA DE CONFIGURACIÓN ================= -->
+    <div id="vistaConfiguracion">
+      <h1>Simulador de gestión de memoria</h1>
+      <p class="intro">
+        Define el tipo de simulación antes de comenzar. El sistema direcciona
+        hasta 16 MiB (0x000000 - 0xFFFFFF).
+      </p>
 
-  <header>
-    <h1>Simulador de Gestión de Memoria Principal (16 MiB)</h1>
-    <span id="current-mode-label" style="font-size: 0.85rem; color: var(--text-muted);">Configuración inicial</span>
-  </header>
-
-  <!-- ETAPA 1: CONFIGURACIÓN INICIAL -->
-  <div id="setup-stage" class="config-container">
-    <h2 style="margin-bottom: 1rem; color: var(--accent);">Parámetros de Simulación</h2>
-    
-    <div class="form-group">
-      <label for="mem-type">Tipo de Gestión de Memoria</label>
-      <select id="mem-type" onchange="handleTypeChange()">
-        <option value="fixed-static">Particiones Estáticas de Tamaño Fijo</option>
-        <option value="variable-static">Particiones Estáticas de Tamaño Variable</option>
-        <option value="dynamic">Particiones Dinámicas</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="os-size">Memoria Reservada para SO (KiB)</label>
-      <input type="number" id="os-size" value="2048" min="512" max="4096">
-      <small style="color: var(--text-muted);">Por defecto: 2048 KiB (2 MiB)</small>
-    </div>
-
-    <div class="form-group">
-      <label for="fit-algorithm">Algoritmo de Asignación</label>
-      <select id="fit-algorithm">
-        <option value="first-fit">Primer Ajuste (First Fit)</option>
-        <option value="best-fit">Mejor Ajuste (Best Fit)</option>
-        <option value="worst-fit">Peor Ajuste (Worst Fit)</option>
-      </select>
-    </div>
-
-    <!-- Opciones específicas: Estática Fija -->
-    <div id="field-fixed-static" class="dynamic-field" style="display: block;">
-      <div class="form-group">
-        <label for="block-size">Tamaño de cada Partición Fija (KiB)</label>
-        <input type="number" id="block-size" value="2048" step="256">
-      </div>
-    </div>
-
-    <!-- Opciones específicas: Estática Variable -->
-    <div id="field-variable-static" class="dynamic-field">
-      <div class="form-group">
-        <label for="partition-sizes">Tamaños de las Particiones separadas por coma (KiB)</label>
-        <input type="text" id="partition-sizes" placeholder="1024, 2048, 4096, 3072, 4096">
-      </div>
-    </div>
-
-    <!-- Opciones específicas: Dinámica -->
-    <div id="field-dynamic" class="dynamic-field">
-      <div class="form-group">
-        <label for="compaction-option">Estrategia de Compactación</label>
-        <select id="compaction-option">
-          <option value="without">Sin Compactación</option>
-          <option value="with">Con Compactación Automática</option>
+      <div class="campo">
+        <label for="tipoGestion">Tipo de gestión de memoria</label>
+        <select id="tipoGestion">
+          <option value="fija">Particiones estáticas de tamaño fijo</option>
+          <option value="variable">
+            Particiones estáticas de tamaño variable
+          </option>
+          <option value="dinamica">Particiones dinámicas</option>
         </select>
       </div>
+
+      <div class="fila-doble">
+        <div class="campo">
+          <label for="memoriaSO"
+            >Memoria reservada para el sistema operativo (KiB)</label
+          >
+          <input type="number" id="memoriaSO" value="1024" min="0" />
+        </div>
+        <div class="campo">
+          <label for="tamPila"
+            >Tamaño reservado para pila por proceso (KiB)</label
+          >
+          <input type="number" id="tamPila" value="64" min="0" />
+        </div>
+      </div>
+      <div class="campo">
+        <label for="tamMonticulo"
+          >Tamaño reservado para montículo por proceso (KiB)</label
+        >
+        <input type="number" id="tamMonticulo" value="128" min="0" />
+      </div>
+
+      <!-- sección: partición fija -->
+      <div id="seccionFija" class="seccion-tipo">
+        <h3>Particiones de tamaño fijo</h3>
+        <div class="fila-doble">
+          <div class="campo">
+            <label for="numParticionesFija">Número de particiones</label>
+            <input type="number" id="numParticionesFija" value="4" min="1" />
+          </div>
+          <div class="campo">
+            <label for="tamParticionFija">Tamaño de cada partición (KiB)</label>
+            <input type="number" id="tamParticionFija" value="2048" min="1" />
+          </div>
+        </div>
+      </div>
+
+      <!-- sección: partición variable -->
+      <div id="seccionVariable" class="seccion-tipo oculto">
+        <h3>Particiones de tamaño variable</h3>
+        <div class="campo">
+          <label for="numParticionesVariable">Número de particiones</label>
+          <input type="number" id="numParticionesVariable" value="4" min="1" />
+        </div>
+        <div id="listaTamanosVariable" class="lista-tamanos-variable"></div>
+      </div>
+
+      <!-- sección: dinámica -->
+      <div id="seccionDinamica" class="seccion-tipo oculto">
+        <h3>Particiones dinámicas</h3>
+        <div class="campo">
+          <label>Compactación</label>
+          <div class="grupo-radio">
+            <label
+              ><input type="radio" name="compactacion" value="no" checked /> Sin
+              compactación</label
+            >
+            <label
+              ><input type="radio" name="compactacion" value="si" /> Con
+              compactación automática</label
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- algoritmo de asignación (variable y dinámica) -->
+      <div id="seccionAlgoritmo" class="seccion-tipo">
+        <div class="campo">
+          <label for="algoritmoAsignacion">Algoritmo de asignación</label>
+          <select id="algoritmoAsignacion">
+            <option value="primer">Primer ajuste</option>
+            <option value="mejor">Mejor ajuste</option>
+            <option value="peor">Peor ajuste</option>
+          </select>
+        </div>
+      </div>
+
+      <p id="errorConfig"></p>
+      <button
+        class="boton-primario"
+        id="botonIniciar"
+        style="margin-top: 8px; width: 100%"
+      >
+        Iniciar simulación
+      </button>
     </div>
 
-    <button class="btn-primary" onclick="startSimulation()">Iniciar Simulación</button>
-  </div>
+    <!-- ================= DASHBOARD ================= -->
+    <div id="vistaDashboard" class="oculto">
+      <div class="cabecera-dashboard">
+        <div>
+          <h1 style="font-size: 18px">Simulador de gestión de memoria</h1>
+          <p class="resumen-config" id="resumenConfig"></p>
+        </div>
+        <button id="botonReiniciar">Reiniciar simulación</button>
+      </div>
 
-  <!-- ETAPA 2: DASHBOARD SIMULACIÓN -->
-  <div id="simulation-stage" class="simulation-layout">
-    
-    <!-- Izquierda: Programas / Administrador de Tareas -->
-<div class="panel">
-  <div class="panel-title">Programas Simulados</div>
-  
-  <!-- Formulario para añadir programas detallados por secciones -->
-<div style="margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border);">
-  <div class="form-section-title">Añadir Nuevo Programa</div>
-  <input type="text" id="new-prog-name" class="form-input" placeholder="Nombre (Ej. Procesador de Video)">
-  
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.5rem;">
-    <div>
-      <label style="font-size: 0.7rem; color: var(--text-muted);">Code (Text) KiB</label>
-      <input type="number" id="new-prog-text" class="form-input" placeholder="Ej. 256" min="64" step="64" oninput="calculateTotalProgSize()">
-    </div>
-    <div>
-      <label style="font-size: 0.7rem; color: var(--text-muted);">Data KiB</label>
-      <input type="number" id="new-prog-data" class="form-input" placeholder="Ej. 512" min="64" step="64" oninput="calculateTotalProgSize()">
-    </div>
-  </div>
+      <div class="layout">
+        <!-- procesos -->
+        <div class="panel">
+          <h2>Procesos</h2>
+          <div class="contenedor-tabla">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Cód.</th>
+                  <th>D.Inic</th>
+                  <th>D.NoInic</th>
+                  <th>Mem. inicial</th>
+                  <th>Mem. a usar</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cuerpoTablaProcesos"></tbody>
+            </table>
+          </div>
+          <p class="nota-panel">
+            Memoria a usar = memoria inicial + pila + montículo + encabezado del
+            ejecutable (fijo). Tamaños en KiB.
+          </p>
+          <button
+            id="botonAgregarPrograma"
+            style="margin-top: 10px; width: 100%"
+          >
+            + Agregar programa
+          </button>
+        </div>
 
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.5rem;">
-    <div>
-      <label style="font-size: 0.7rem; color: var(--text-muted);">Heap KiB</label>
-      <input type="number" id="new-prog-heap" class="form-input" placeholder="Ej. 256" min="0" step="64" oninput="calculateTotalProgSize()">
-    </div>
-    <div>
-      <label style="font-size: 0.7rem; color: var(--text-muted);">Stack KiB</label>
-      <input type="number" id="new-prog-stack" class="form-input" placeholder="Ej. 256" min="64" step="64" oninput="calculateTotalProgSize()">
-    </div>
-  </div>
+        <!-- particiones -->
+        <div class="panel">
+          <h2>Estado de particiones</h2>
+          <div class="contenedor-tabla">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Inicio</th>
+                  <th>Fin</th>
+                  <th>Tamaño</th>
+                  <th>Estado</th>
+                  <th>Proceso</th>
+                </tr>
+              </thead>
+              <tbody id="cuerpoTablaParticiones"></tbody>
+            </table>
+          </div>
+        </div>
 
-  <div style="font-size: 0.75rem; margin-bottom: 0.5rem; color: var(--text-muted);">
-    Tamaño Total Calculado: <strong id="preview-total-size" style="color: var(--accent);">0 KiB</strong>
-  </div>
-
-  <button class="btn-sm btn-start btn-full" onclick="addNewProgram()">+ Crear y Registrar</button>
-</div>
-  <div id="task-list" class="task-list">
-    <!-- Renderizado dinámico vía JS -->
-  </div>
-</div>
-
-    <!-- Centro: Tabla de Particiones / Fragmentación -->
-    <div class="panel">
-      <div class="panel-title">Tabla de Estado de Particiones</div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>ID / Dir. Inicio</th>
-              <th>Tamaño Total</th>
-              <th>Proceso</th>
-              <th>Uso / Frag. Int.</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody id="partition-table-body">
-            <!-- Renderizado dinámico vía JS -->
-          </tbody>
-        </table>
+        <!-- mapa de memoria -->
+        <div class="panel">
+          <h2>Mapa de memoria</h2>
+          <div id="mapaMemoria"></div>
+        </div>
       </div>
     </div>
 
-    <!-- Derecha: Pila / Mapa Físico de Memoria (0x000000 - 0xFFFFFF) -->
-    <div class="panel">
-      <div class="panel-title">Mapa de Memoria (16 MiB)</div>
-      <div id="memory-stack" class="memory-stack">
-        <!-- Visualización en pila vía JS -->
+    <!-- ================= MODAL AGREGAR PROGRAMA ================= -->
+    <div id="modalAgregarPrograma" class="modal-fondo oculto">
+      <div class="modal-caja">
+        <h3>Agregar programa</h3>
+        <div class="campo">
+          <label for="campoNombrePrograma">Nombre</label>
+          <input
+            type="text"
+            id="campoNombrePrograma"
+            placeholder="mi_programa.exe"
+          />
+        </div>
+        <div class="campo">
+          <label for="campoCodigoPrograma">Tamaño de código (KiB)</label>
+          <input type="number" id="campoCodigoPrograma" value="50" min="0" />
+        </div>
+        <div class="campo">
+          <label for="campoDatosIniPrograma">Datos inicializados (KiB)</label>
+          <input type="number" id="campoDatosIniPrograma" value="10" min="0" />
+        </div>
+        <div class="campo">
+          <label for="campoDatosNoIniPrograma"
+            >Datos sin inicializar (KiB)</label
+          >
+          <input
+            type="number"
+            id="campoDatosNoIniPrograma"
+            value="10"
+            min="0"
+          />
+        </div>
+        <p id="errorModal" style="color: var(--rojo); font-size: 13px"></p>
+        <div class="modal-acciones">
+          <button id="botonCancelarModal">Cancelar</button>
+          <button class="boton-primario" id="botonConfirmarModal">Crear</button>
+        </div>
       </div>
     </div>
 
-  </div>
-</body>
+    <div id="toast"></div>
+
+    <script></script>
+  </body>
 </html>
