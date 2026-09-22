@@ -1,4 +1,4 @@
-// Memoria total 16 MiB = 16384 KiB
+// memoria total 16 MiB = 16384 KiB
     const TOTAL_MEMORY_KIB = 16384;
 
     // 5 Programas predeterminados con distribución interna de segmentos
@@ -111,6 +111,17 @@
       }
     }
 
+    // Función auxiliar para actualizar en tiempo real el tamaño total mientras escribes los segmentos
+    function calculateTotalProgSize() {
+      const text = parseInt(document.getElementById('new-prog-text').value) || 0;
+      const data = parseInt(document.getElementById('new-prog-data').value) || 0;
+      const heap = parseInt(document.getElementById('new-prog-heap').value) || 0;
+      const stack = parseInt(document.getElementById('new-prog-stack').value) || 0;
+      
+      const total = text + data + heap + stack;
+      document.getElementById('preview-total-size').innerText = `${total} KiB`;
+    }
+
     function renderTasks() {
       const container = document.getElementById('task-list');
       container.innerHTML = '';
@@ -124,7 +135,7 @@
             <span style="font-size: 0.8rem; color: var(--accent);">${prog.totalSize} KiB</span>
           </div>
           <div class="task-details">
-            Segmentos: Code (${prog.segments.text}K) | Data (${prog.segments.data}K) | Stack (${prog.segments.stack}K)
+            Code (${prog.segments.text}K) | Data (${prog.segments.data}K) | Heap (${prog.segments.heap || 0}K) | Stack (${prog.segments.stack}K)
           </div>
           <div class="task-actions">
             ${!prog.running 
@@ -202,4 +213,129 @@
         `;
         stackContainer.appendChild(block);
       });
+    }
+
+    function launchProgram(progId) {
+  const prog = preconfiguredPrograms.find(p => p.id === progId);
+  if (!prog) return;
+
+  const algorithm = config.algorithm; // 'first-fit', 'best-fit', 'worst-fit'
+  let targetPartition = null;
+
+  // 1. Filtrar bloques libres que tengan espacio suficiente para el programa
+  const freeBlocks = memoryLayout.filter(part => part.free && part.size >= prog.totalSize);
+
+  if (freeBlocks.length === 0) {
+    alert(`No hay suficiente memoria libre (o partición adecuada) para ejecutar ${prog.name}.`);
+    return;
+  }
+
+  // 2. Aplicar el algoritmo de ajuste seleccionado
+  if (algorithm === 'first-fit') {
+    // El primero que encuentra
+    targetPartition = freeBlocks[0];
+  } 
+  else if (algorithm === 'best-fit') {
+    // El que tenga el tamaño más cercano (menor desperdicio)
+    targetPartition = freeBlocks.reduce((prev, curr) => (curr.size < prev.size) ? curr : prev);
+  } 
+  else if (algorithm === 'worst-fit') {
+    // El que tenga el mayor tamaño disponible
+    targetPartition = freeBlocks.reduce((prev, curr) => (curr.size > prev.size) ? curr : prev);
+  }
+
+  // 3. Asignar el programa a la partición encontrada
+  if (targetPartition) {
+    targetPartition.free = false;
+    targetPartition.process = `${prog.name} (${prog.id})`;
+    
+    // Calcular fragmentación interna (si sobra espacio en la partición fija)
+    if (config.type === 'fixed-static' || config.type === 'variable-static') {
+      targetPartition.fragInternal = targetPartition.size - prog.totalSize;
+    } else {
+      targetPartition.fragInternal = 0;
+      // Nota: Si estás en modo dinámico puro, aquí podrías subdividir el bloque libre restante, 
+      // pero para empezar, marcar el bloque como ocupado actualizará tu interfaz visualmente.
+    }
+
+    prog.running = true;
+    renderTasks();
+    renderSimulationUI();
+  }
+}
+
+function terminateProgram(progId) {
+  const prog = preconfiguredPrograms.find(p => p.id === progId);
+  if (!prog) return;
+
+  // Buscar la partición que contiene este programa y liberarla
+  memoryLayout.forEach(part => {
+    if (part.process && part.process.includes(`(${prog.id})`)) {
+      part.free = true;
+      part.process = null;
+      part.fragInternal = 0;
+    }
+  });
+
+  prog.running = false;
+  renderTasks();
+  renderSimulationUI();
+}
+
+function addNewProgram() {
+      const nameInput = document.getElementById('new-prog-name');
+      const textInput = document.getElementById('new-prog-text');
+      const dataInput = document.getElementById('new-prog-data');
+      const heapInput = document.getElementById('new-prog-heap');
+      const stackInput = document.getElementById('new-prog-stack');
+
+      const name = nameInput.value.trim();
+      const text = parseInt(textInput.value) || 0;
+      const data = parseInt(dataInput.value) || 0;
+      const heap = parseInt(heapInput.value) || 0;
+      const stack = parseInt(stackInput.value) || 0;
+
+      const totalSize = text + data + heap + stack;
+
+      // Validaciones robustas
+      if (!name) {
+        alert('Por favor, ingresa un nombre para el programa.');
+        return;
+      }
+      if (totalSize <= 0) {
+        alert('El programa debe tener al menos una sección con tamaño mayor a 0 KiB.');
+        return;
+      }
+
+      // Generar ID consecutivo
+      const newId = `P${preconfiguredPrograms.length + 1}`;
+
+      // Crear el nuevo objeto estructurado con las secciones solicitadas por el profe
+      const newProgram = {
+        id: newId,
+        name: name,
+        segments: { 
+          text: text, 
+          data: data, 
+          heap: heap, 
+          stack: stack 
+        },
+        totalSize: totalSize,
+        running: false,
+        startAddr: null
+      };
+
+      // Añadir al arreglo de programas
+      preconfiguredPrograms.push(newProgram);
+
+      // Limpiar campos del formulario y previsualización
+      nameInput.value = '';
+      textInput.value = '';
+      dataInput.value = '';
+      heapInput.value = '';
+      stackInput.value = '';
+      document.getElementById('preview-total-size').innerText = '0 KiB';
+
+      // Actualizar interfaz
+      renderTasks();
     }
