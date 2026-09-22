@@ -76,12 +76,46 @@
   <div id="simulation-stage" class="simulation-layout">
     
     <!-- Izquierda: Programas / Administrador de Tareas -->
-    <div class="panel">
-      <div class="panel-title">Programas Simulados</div>
-      <div id="task-list" class="task-list">
-        <!-- Renderizado dinámico vía JS -->
-      </div>
+<div class="panel">
+  <div class="panel-title">Programas Simulados</div>
+  
+  <!-- Formulario para añadir programas detallados por secciones -->
+<div style="margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border);">
+  <div class="form-section-title">Añadir Nuevo Programa</div>
+  <input type="text" id="new-prog-name" class="form-input" placeholder="Nombre (Ej. Procesador de Video)">
+  
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.5rem;">
+    <div>
+      <label style="font-size: 0.7rem; color: var(--text-muted);">Code (Text) KiB</label>
+      <input type="number" id="new-prog-text" class="form-input" placeholder="Ej. 256" min="64" step="64" oninput="calculateTotalProgSize()">
     </div>
+    <div>
+      <label style="font-size: 0.7rem; color: var(--text-muted);">Data KiB</label>
+      <input type="number" id="new-prog-data" class="form-input" placeholder="Ej. 512" min="64" step="64" oninput="calculateTotalProgSize()">
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.5rem;">
+    <div>
+      <label style="font-size: 0.7rem; color: var(--text-muted);">Heap KiB</label>
+      <input type="number" id="new-prog-heap" class="form-input" placeholder="Ej. 256" min="0" step="64" oninput="calculateTotalProgSize()">
+    </div>
+    <div>
+      <label style="font-size: 0.7rem; color: var(--text-muted);">Stack KiB</label>
+      <input type="number" id="new-prog-stack" class="form-input" placeholder="Ej. 256" min="64" step="64" oninput="calculateTotalProgSize()">
+    </div>
+  </div>
+
+  <div style="font-size: 0.75rem; margin-bottom: 0.5rem; color: var(--text-muted);">
+    Tamaño Total Calculado: <strong id="preview-total-size" style="color: var(--accent);">0 KiB</strong>
+  </div>
+
+  <button class="btn-sm btn-start btn-full" onclick="addNewProgram()">+ Crear y Registrar</button>
+</div>
+  <div id="task-list" class="task-list">
+    <!-- Renderizado dinámico vía JS -->
+  </div>
+</div>
 
     <!-- Centro: Tabla de Particiones / Fragmentación -->
     <div class="panel">
