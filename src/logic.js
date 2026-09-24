@@ -1,22 +1,22 @@
-/* ---------------------------------------------------------------
+/* 
    constantes generales del sistema
---------------------------------------------------------------- */
+ */
 const KIB = 1024;
 const MEMORIA_TOTAL = 16 * 1024 * 1024;
 const ENCABEZADO_EXE = 1 * KIB;
 
-/* ---------------------------------------------------------------
+/* 
    estado global de la simulación
---------------------------------------------------------------- */
+ */
 let config = {};
 let particiones = [];
 let procesos = [];
 let idParticiones = 0;
 let idProcesos = 0;
 
-/* ---------------------------------------------------------------
+/* 
    utilidades
---------------------------------------------------------------- */
+ */
 function aBytes(kib) {
   return Math.round(kib * KIB);
 }
@@ -40,9 +40,9 @@ function mostrarMensaje(texto) {
   setTimeout(() => item.remove(), 4000);
 }
 
-/* ---------------------------------------------------------------
+/* 
    pantalla de configuración: mostrar/ocultar secciones según tipo
---------------------------------------------------------------- */
+ */
 const selectorTipo = document.getElementById("tipoGestion");
 if (selectorTipo) {
   selectorTipo.addEventListener("change", actualizarSeccionesConfig);
@@ -89,9 +89,9 @@ function generarCamposVariable() {
 }
 generarCamposVariable();
 
-/* ---------------------------------------------------------------
+/* 
    iniciar simulación a partir del formulario de configuración
---------------------------------------------------------------- */
+ */
 document.getElementById("botonIniciar")?.addEventListener("click", () => {
   const errorBox = document.getElementById("errorConfig");
   if (errorBox) errorBox.textContent = "";
@@ -170,9 +170,9 @@ document.getElementById("botonIniciar")?.addEventListener("click", () => {
   inicializarSimulacion();
 });
 
-/* ---------------------------------------------------------------
+/* 
    construir el mapa inicial de particiones
---------------------------------------------------------------- */
+ */
 function crearParticionesIniciales() {
   particiones = [];
   idParticiones = 0;
@@ -212,9 +212,9 @@ function crearParticion(base, tamano) {
   };
 }
 
-/* ---------------------------------------------------------------
+/* 
    procesos precargados
---------------------------------------------------------------- */
+ */
 function crearProcesosPrecargados() {
   procesos = [];
   idProcesos = 0;
@@ -283,9 +283,9 @@ function agregarProceso(
   });
 }
 
-/* ---------------------------------------------------------------
+/* 
    algoritmos de asignación
---------------------------------------------------------------- */
+ */
 function elegirParticionLibre(candidatas) {
   if (candidatas.length === 0) return null;
   if (config.algoritmo === "mejor")
@@ -295,9 +295,9 @@ function elegirParticionLibre(candidatas) {
   return candidatas[0]; // primer ajuste
 }
 
-/* ---------------------------------------------------------------
+/* 
    iniciar / detener procesos
---------------------------------------------------------------- */
+ */
 function iniciarProceso(id) {
   const proceso = procesos.find((p) => p.id === id);
   if (!proceso || proceso.estado === "ejecutando") return;
@@ -399,9 +399,9 @@ function compactarMemoria() {
   particiones = nuevas;
 }
 
-/* ---------------------------------------------------------------
+/* 
    render: tabla de procesos
---------------------------------------------------------------- */
+ */
 function renderizarProcesos() {
   const cuerpo = document.getElementById("cuerpoTablaProcesos");
   if (!cuerpo) return;
@@ -429,9 +429,9 @@ function renderizarProcesos() {
   });
 }
 
-/* ---------------------------------------------------------------
+/* 
    render: tabla de particiones
---------------------------------------------------------------- */
+ */
 function renderizarParticiones() {
   const cuerpo = document.getElementById("cuerpoTablaParticiones");
   if (!cuerpo) return;
@@ -457,9 +457,9 @@ function renderizarParticiones() {
     });
 }
 
-/* ---------------------------------------------------------------
+/* 
    render: mapa de memoria vertical
---------------------------------------------------------------- */
+ */
 function renderizarMapaMemoria() {
   const contenedor = document.getElementById("mapaMemoria");
   if (!contenedor) return;
@@ -493,9 +493,9 @@ function renderizarTodo() {
   renderizarMapaMemoria();
 }
 
-/* ---------------------------------------------------------------
+/* 
    modal para agregar un nuevo programa
---------------------------------------------------------------- */
+ */
 const modal = document.getElementById("modalAgregarPrograma");
 document
   .getElementById("botonAgregarPrograma")
@@ -540,9 +540,9 @@ document
     modal?.classList.add("oculto");
   });
 
-/* ---------------------------------------------------------------
+/* 
    arranque de la simulación y reinicio
---------------------------------------------------------------- */
+ */
 function inicializarSimulacion() {
   crearParticionesIniciales();
   crearProcesosPrecargados();
@@ -575,8 +575,8 @@ document
   .getElementById("botonReiniciar")
   ?.addEventListener("click", () => location.reload());
 
-/* ---------------------------------------------------------------
+/* 
    Exposición explícita al scope global para listeners de HTML
---------------------------------------------------------------- */
+ */
 window.iniciarProceso = iniciarProceso;
 window.detenerProceso = detenerProceso;
