@@ -275,8 +275,8 @@ tr:last-child td {
   position: absolute;
   left: 4px;
   right: 4px;
-  top: 1px;
-  font-size: 9px;
+  bottom: 1px;
+  font-size: 12px;
   opacity: 0.75;
   display: flex;
   justify-content: space-between;
