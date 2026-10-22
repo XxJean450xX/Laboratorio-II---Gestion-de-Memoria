@@ -349,3 +349,13 @@ tr:last-child td {
 .boton-eliminar:hover {
   background: #f7d9d9;
 }
+
+/* sub-filas de instancias en ejecución */
+.fila-instancia td {
+  background: var(--acento-suave);
+  color: var(--texto-suave);
+  font-size: 12px;
+}
+.fila-instancia td:first-child {
+  padding-left: 14px;
+}

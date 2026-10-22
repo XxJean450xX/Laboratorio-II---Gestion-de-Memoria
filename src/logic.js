@@ -10,9 +10,13 @@ const ENCABEZADO_EXE = 1 * KIB;
  */
 let config = {};
 let particiones = [];
+// programas = plantillas disponibles (lo que se ve en el catálogo)
+// procesos  = instancias en ejecución (cada una ocupa una partición)
+let programas = [];
 let procesos = [];
 let idParticiones = 0;
 let idProcesos = 0;
+let idProgramas = 0;
 // definiciones (en KiB) de los programas que agrega el usuario; persisten
 // aunque se reinicie la simulación o se cambie el tipo de gestión de memoria
 let programasPersonalizados = [];
@@ -216,10 +220,12 @@ function crearParticion(base, tamano) {
 }
 
 /* 
-   procesos precargados
+   catálogo de programas (plantillas) precargados
  */
-function crearProcesosPrecargados() {
+function crearProgramas() {
+  programas = [];
   procesos = [];
+  idProgramas = 0;
   idProcesos = 0;
   const base = [
     {
@@ -254,17 +260,18 @@ function crearProcesosPrecargados() {
     },
   ];
   base.forEach((p) =>
-    agregarProceso(p.nombre, p.codigo, p.datosIni, p.datosNoIni, true),
+    agregarPrograma(p.nombre, p.codigo, p.datosIni, p.datosNoIni, true),
   );
 
   // recrear los programas que el usuario agregó en sesiones anteriores
   // (se recalcula memAUsar con la pila/montículo de la config actual)
   programasPersonalizados.forEach((p) =>
-    agregarProceso(p.nombre, p.codigo, p.datosIni, p.datosNoIni, false),
+    agregarPrograma(p.nombre, p.codigo, p.datosIni, p.datosNoIni, false),
   );
 }
 
-function agregarProceso(
+// crea una plantilla de programa en el catálogo (no la ejecuta)
+function agregarPrograma(
   nombre,
   codigoKiB,
   datosIniKiB,
@@ -276,18 +283,14 @@ function agregarProceso(
   const datosNoIni = aBytes(datosNoIniKiB);
   const memInicial = codigo + datosIni + datosNoIni;
   const memAUsar = memInicial + config.pila + config.monticulo + ENCABEZADO_EXE;
-  procesos.push({
-    id: ++idProcesos,
+  programas.push({
+    id: ++idProgramas,
     nombre,
     codigo,
     datosIni,
     datosNoIni,
     memInicial,
     memAUsar,
-    estado: "detenido",
-    particionId: null,
-    base: null,
-    limite: null,
     precargado,
   });
 }
@@ -307,18 +310,37 @@ function elegirParticionLibre(candidatas) {
 /* 
    iniciar / detener procesos
  */
-function iniciarProceso(id) {
-  const proceso = procesos.find((p) => p.id === id);
-  if (!proceso || proceso.estado === "ejecutando") return;
+// crea una nueva instancia (proceso) a partir de una plantilla de programa.
+// un mismo programa puede iniciarse varias veces: cada llamada genera una
+// instancia distinta que ocupa su propia partición.
+function iniciarPrograma(idPrograma) {
+  const programa = programas.find((p) => p.id === idPrograma);
+  if (!programa) return;
 
   const candidatas = particiones.filter(
-    (p) => p.estado === "libre" && p.tamano >= proceso.memAUsar,
+    (p) => p.estado === "libre" && p.tamano >= programa.memAUsar,
   );
   const elegida = elegirParticionLibre(candidatas);
   if (!elegida) {
-    mostrarMensaje("No hay espacio suficiente para " + proceso.nombre + ".");
+    mostrarMensaje("No hay espacio suficiente para " + programa.nombre + ".");
     return;
   }
+
+  // nueva instancia en ejecución derivada de la plantilla
+  const proceso = {
+    id: ++idProcesos,
+    programaId: programa.id,
+    nombre: programa.nombre,
+    codigo: programa.codigo,
+    datosIni: programa.datosIni,
+    datosNoIni: programa.datosNoIni,
+    memInicial: programa.memInicial,
+    memAUsar: programa.memAUsar,
+    particionId: null,
+    base: null,
+    limite: null,
+  };
+  procesos.push(proceso);
 
   if (config.tipo === "dinamica") {
     // Asegurar orden espacial antes de calcular sobrantes e índices
@@ -341,7 +363,6 @@ function iniciarProceso(id) {
     elegida.procesoId = proceso.id;
   }
 
-  proceso.estado = "ejecutando";
   proceso.particionId = elegida.id;
   proceso.base = elegida.base;
   proceso.limite = elegida.base + elegida.tamano - 1;
@@ -349,9 +370,10 @@ function iniciarProceso(id) {
   renderizarTodo();
 }
 
+// detiene una instancia concreta (por id de proceso) y libera su partición
 function detenerProceso(id) {
   const proceso = procesos.find((p) => p.id === id);
-  if (!proceso || proceso.estado === "detenido") return;
+  if (!proceso) return;
 
   const particion = particiones.find((p) => p.id === proceso.particionId);
   if (particion) {
@@ -359,37 +381,38 @@ function detenerProceso(id) {
     particion.procesoId = null;
   }
 
+  // la instancia desaparece al detenerse
+  procesos = procesos.filter((p) => p.id !== id);
+
   if (config.tipo === "dinamica") {
     fusionarHuecosAdyacentes();
     if (config.compactacion) compactarMemoria();
   }
 
-  proceso.estado = "detenido";
-  proceso.particionId = null;
-  proceso.base = null;
-  proceso.limite = null;
-
   renderizarTodo();
 }
 
-function eliminarProceso(id) {
-  const proceso = procesos.find((p) => p.id === id);
-  if (!proceso || proceso.precargado) return;
+// elimina una plantilla del catálogo y detiene todas sus instancias activas
+function eliminarPrograma(idPrograma) {
+  const programa = programas.find((p) => p.id === idPrograma);
+  if (!programa || programa.precargado) return;
 
-  // si está ejecutando, liberar primero su partición
-  if (proceso.estado === "ejecutando") detenerProceso(id);
+  // detener todas las instancias en ejecución de este programa
+  procesos
+    .filter((p) => p.programaId === idPrograma)
+    .forEach((p) => detenerProceso(p.id));
 
-  // quitarlo de la lista activa
-  procesos = procesos.filter((p) => p.id !== id);
+  // quitar la plantilla del catálogo
+  programas = programas.filter((p) => p.id !== idPrograma);
 
   // quitarlo del almacén persistente para que no reaparezca al reiniciar.
   // se busca por los campos originales en KiB con los que fue creado
   const indice = programasPersonalizados.findIndex(
     (pp) =>
-      pp.nombre === proceso.nombre &&
-      aBytes(pp.codigo) === proceso.codigo &&
-      aBytes(pp.datosIni) === proceso.datosIni &&
-      aBytes(pp.datosNoIni) === proceso.datosNoIni,
+      pp.nombre === programa.nombre &&
+      aBytes(pp.codigo) === programa.codigo &&
+      aBytes(pp.datosIni) === programa.datosIni &&
+      aBytes(pp.datosNoIni) === programa.datosNoIni,
   );
   if (indice !== -1) programasPersonalizados.splice(indice, 1);
 
@@ -439,30 +462,43 @@ function renderizarProcesos() {
   const cuerpo = document.getElementById("cuerpoTablaProcesos");
   if (!cuerpo) return;
   cuerpo.innerHTML = "";
-  procesos.forEach((p) => {
+
+  programas.forEach((prog) => {
+    // instancias en ejecución de este programa
+    const instancias = procesos.filter((p) => p.programaId === prog.id);
+
+    // fila de la plantilla
     const fila = document.createElement("tr");
     const insignia =
-      p.estado === "ejecutando"
-        ? '<span class="insignia insignia-ejecutando">Ejecutando</span>'
+      instancias.length > 0
+        ? `<span class="insignia insignia-ejecutando">${instancias.length} en ejecución</span>`
         : '<span class="insignia insignia-detenido">Detenido</span>';
-    const boton =
-      p.estado === "ejecutando"
-        ? `<button class="boton-pequeno" onclick="detenerProceso(${p.id})">Detener</button>`
-        : `<button class="boton-pequeno" onclick="iniciarProceso(${p.id})">Iniciar</button>`;
+    const botonIniciar = `<button class="boton-pequeno" onclick="iniciarPrograma(${prog.id})">Iniciar</button>`;
     // solo los programas agregados por el usuario se pueden eliminar
-    const botonEliminar = p.precargado
+    const botonEliminar = prog.precargado
       ? ""
-      : `<button class="boton-pequeno boton-eliminar" onclick="eliminarProceso(${p.id})">Eliminar</button>`;
+      : `<button class="boton-pequeno boton-eliminar" onclick="eliminarPrograma(${prog.id})">Eliminar</button>`;
     fila.innerHTML = `
-      <td>${p.nombre}${p.precargado ? '<div class="etiqueta-precargado">precargado</div>' : ""}</td>
-      <td>${aKiB(p.codigo)}</td>
-      <td>${aKiB(p.datosIni)}</td>
-      <td>${aKiB(p.datosNoIni)}</td>
-      <td>${aKiB(p.memInicial)}</td>
-      <td>${aKiB(p.memAUsar)}</td>
+      <td>${prog.nombre}${prog.precargado ? '<div class="etiqueta-precargado">precargado</div>' : ""}</td>
+      <td>${aKiB(prog.codigo)}</td>
+      <td>${aKiB(prog.datosIni)}</td>
+      <td>${aKiB(prog.datosNoIni)}</td>
+      <td>${aKiB(prog.memInicial)}</td>
+      <td>${aKiB(prog.memAUsar)}</td>
       <td>${insignia}</td>
-      <td class="celda-acciones">${boton}${botonEliminar}</td>`;
+      <td class="celda-acciones">${botonIniciar}${botonEliminar}</td>`;
     cuerpo.appendChild(fila);
+
+    // sub-filas: una por cada instancia activa
+    instancias.forEach((inst, i) => {
+      const subfila = document.createElement("tr");
+      subfila.className = "fila-instancia";
+      subfila.innerHTML = `
+        <td colspan="6">↳ Instancia #${i + 1} · partición P${inst.particionId} · ${aHex(inst.base)}–${aHex(inst.limite)}</td>
+        <td><span class="insignia insignia-ocupada">Ejecutando</span></td>
+        <td class="celda-acciones"><button class="boton-pequeno" onclick="detenerProceso(${inst.id})">Detener</button></td>`;
+      cuerpo.appendChild(subfila);
+    });
   });
 }
 
@@ -575,7 +611,7 @@ document
     // guardar la definición para que persista al reiniciar o cambiar de tipo
     programasPersonalizados.push({ nombre, codigo, datosIni, datosNoIni });
 
-    agregarProceso(nombre, codigo, datosIni, datosNoIni, false);
+    agregarPrograma(nombre, codigo, datosIni, datosNoIni, false);
     renderizarProcesos();
     modal?.classList.add("oculto");
   });
@@ -585,7 +621,7 @@ document
  */
 function inicializarSimulacion() {
   crearParticionesIniciales();
-  crearProcesosPrecargados();
+  crearProgramas();
 
   const nombresTipo = {
     fija: "Particiones fijas",
@@ -616,8 +652,10 @@ function inicializarSimulacion() {
 function reiniciarSimulacion() {
   particiones = [];
   procesos = [];
+  programas = [];
   idParticiones = 0;
   idProcesos = 0;
+  idProgramas = 0;
   config = {};
 
   document.getElementById("vistaDashboard")?.classList.add("oculto");
@@ -634,6 +672,6 @@ document
 /* 
    Exposición explícita al scope global para listeners de HTML
  */
-window.iniciarProceso = iniciarProceso;
+window.iniciarPrograma = iniciarPrograma;
 window.detenerProceso = detenerProceso;
-window.eliminarProceso = eliminarProceso;
+window.eliminarPrograma = eliminarPrograma;
