@@ -360,43 +360,6 @@ tr:last-child td {
   padding-left: 14px;
 }
 
-/* ---------- paginación: rejilla de marcos ---------- */
-#mapaMemoria.mapa-rejilla {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
-  grid-auto-rows: 30px;
-  gap: 3px;
-  height: auto;
-  max-height: 520px;
-  overflow: auto;
-  padding: 6px;
-  background: var(--fondo);
-}
-.celda-marco {
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  line-height: 1.1;
-  text-align: center;
-  overflow: hidden;
-  color: var(--texto);
-  cursor: default;
-}
-.marco-libre {
-  background: var(--verde-suave);
-  color: var(--verde);
-}
-.marco-ocupado {
-  background: var(--acento);
-  color: #fff;
-}
-.marco-so {
-  background: #c7cdd6;
-  color: #4b5563;
-}
-
 /* ---------- tablas por proceso (segmentos / páginas) ---------- */
 #contenedorTablasProceso {
   display: grid;

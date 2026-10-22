@@ -885,8 +885,6 @@ function renderizarMapaMemoria() {
   }
 
   // resto: bloques verticales proporcionales
-  contenedor.classList.remove("mapa-rejilla");
-
   const bloqueSO = document.createElement("div");
   bloqueSO.className = "bloque-mapa bloque-so";
   bloqueSO.style.flex = config.memoriaSO / MEMORIA_TOTAL;
@@ -915,33 +913,60 @@ function renderizarMapaMemoria() {
     });
 }
 
-// mapa en rejilla para paginación: un recuadro por marco
+// mapa de paginación como barra vertical: marcos contiguos del mismo tipo
+// (SO / libre / mismo proceso) se agrupan en un único bloque proporcional,
+// igual que los demás métodos. Así se mantiene la distribución visual aunque
+// haya cientos de marcos.
 function renderizarMapaMarcos(contenedor) {
-  contenedor.classList.add("mapa-rejilla");
+  const tam = config.tamPagina;
+
+  // clave para decidir si dos marcos adyacentes pertenecen al mismo bloque
+  const claveDe = (m) => {
+    if (m.reservadoSO) return "so";
+    if (m.libre) return "libre";
+    return "p" + m.procesoId;
+  };
+
+  // agrupar marcos consecutivos con la misma clave
+  const grupos = [];
   marcos.forEach((m) => {
-    const proceso = m.procesoId
-      ? procesos.find((p) => p.id === m.procesoId)
-      : null;
-    const celda = document.createElement("div");
-    let clase = "celda-marco";
-    if (m.reservadoSO) clase += " marco-so";
-    else if (m.libre) clase += " marco-libre";
-    else clase += " marco-ocupado";
-    celda.className = clase;
-    const etiqueta = m.reservadoSO
-      ? "SO"
-      : m.libre
-        ? ""
-        : proceso
-          ? `P${proceso.id}·p${m.pagina}`
-          : `p${m.pagina}`;
-    celda.title = m.reservadoSO
-      ? `Marco ${m.indice} · ${aHex(m.base)} · SO`
-      : m.libre
-        ? `Marco ${m.indice} · ${aHex(m.base)} · libre`
-        : `Marco ${m.indice} · ${aHex(m.base)} · ${proceso ? proceso.nombre : ""} página ${m.pagina}`;
-    celda.textContent = etiqueta;
-    contenedor.appendChild(celda);
+    const clave = claveDe(m);
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.clave === clave) {
+      ultimo.fin = m.indice;
+      ultimo.marcos.push(m);
+    } else {
+      grupos.push({ clave, ini: m.indice, fin: m.indice, marcos: [m] });
+    }
+  });
+
+  grupos.forEach((g) => {
+    const primero = g.marcos[0];
+    const numMarcos = g.marcos.length;
+    const tamBloque = numMarcos * tam;
+    const baseIni = primero.base;
+    const baseFin = baseIni + tamBloque - 1;
+
+    const bloque = document.createElement("div");
+    let clase = "bloque-mapa ";
+    let etiqueta;
+    if (g.clave === "so") {
+      clase += "bloque-so";
+      etiqueta = `SO (${aKiB(tamBloque)} KiB)`;
+    } else if (g.clave === "libre") {
+      clase += "bloque-libre";
+      etiqueta = `Libre · ${numMarcos} marco${numMarcos > 1 ? "s" : ""}`;
+    } else {
+      clase += "bloque-ocupado";
+      const proceso = procesos.find((p) => p.id === primero.procesoId);
+      const nombre = proceso ? proceso.nombre : "proceso";
+      etiqueta = `${nombre} · ${numMarcos} pág${numMarcos > 1 ? "s" : ""}`;
+    }
+    bloque.className = clase;
+    bloque.style.flex = tamBloque / MEMORIA_TOTAL;
+    bloque.title = `Marcos ${g.ini}–${g.fin} · ${aHex(baseIni)}–${aHex(baseFin)}`;
+    bloque.innerHTML = `<div class="direcciones"><span>${aHex(baseIni)}</span><span>${aHex(baseFin)}</span></div><span>${etiqueta}</span>`;
+    contenedor.appendChild(bloque);
   });
 }
 
