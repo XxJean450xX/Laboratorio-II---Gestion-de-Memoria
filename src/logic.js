@@ -10,6 +10,8 @@ const ENCABEZADO_EXE = 1 * KIB;
  */
 let config = {};
 let particiones = [];
+// marcos = memoria física dividida en marcos de tamaño fijo (solo paginación)
+let marcos = [];
 // programas = plantillas disponibles (lo que se ve en el catálogo)
 // procesos  = instancias en ejecución (cada una ocupa una partición)
 let programas = [];
@@ -68,8 +70,18 @@ function actualizarSeccionesConfig() {
     .getElementById("seccionDinamica")
     ?.classList.toggle("oculto", tipo !== "dinamica");
   document
+    .getElementById("seccionSegmentacion")
+    ?.classList.toggle("oculto", tipo !== "segmentacion");
+  document
+    .getElementById("seccionPaginacion")
+    ?.classList.toggle("oculto", tipo !== "paginacion");
+  // el algoritmo de ajuste aplica a variable, dinámica y segmentación
+  // (no a fija, que son particiones idénticas, ni a paginación, que usa
+  // el primer marco libre)
+  const sinAlgoritmo = tipo === "fija" || tipo === "paginacion";
+  document
     .getElementById("seccionAlgoritmo")
-    ?.classList.toggle("oculto", tipo === "fija");
+    ?.classList.toggle("oculto", sinAlgoritmo);
 }
 actualizarSeccionesConfig();
 
@@ -172,7 +184,18 @@ document.getElementById("botonIniciar")?.addEventListener("click", () => {
     config.compactacion = radioCompactacion
       ? radioCompactacion.value === "si"
       : false;
+  } else if (tipo === "paginacion") {
+    const tamPaginaKiB =
+      parseFloat(document.getElementById("tamPagina")?.value) || 0;
+    config.tamPagina = aBytes(tamPaginaKiB);
+    if (config.tamPagina <= 0) {
+      if (errorBox)
+        errorBox.textContent = "Define un tamaño de página válido.";
+      return;
+    }
   }
+  // segmentación no requiere parámetros extra: usa memoriaSO, algoritmo,
+  // pila y montículo ya leídos arriba
 
   inicializarSimulacion();
 });
@@ -182,9 +205,21 @@ document.getElementById("botonIniciar")?.addEventListener("click", () => {
  */
 function crearParticionesIniciales() {
   particiones = [];
+  marcos = [];
   idParticiones = 0;
   let base = config.memoriaSO;
   const disponible = MEMORIA_TOTAL - config.memoriaSO;
+
+  if (config.tipo === "paginacion") {
+    crearMarcos();
+    return;
+  }
+
+  if (config.tipo === "segmentacion") {
+    // segmentación: igual que dinámica, un único bloque libre inicial
+    particiones.push(crearParticion(base, disponible));
+    return;
+  }
 
   if (config.tipo === "fija") {
     for (let i = 0; i < config.numParticiones; i++) {
@@ -217,6 +252,26 @@ function crearParticion(base, tamano) {
     estado: "libre",
     procesoId: null,
   };
+}
+
+// divide toda la memoria direccionable en marcos de tamaño fijo. Los marcos
+// que caen dentro de la región del SO quedan reservados (no asignables).
+function crearMarcos() {
+  marcos = [];
+  const tam = config.tamPagina;
+  const total = Math.floor(MEMORIA_TOTAL / tam);
+  for (let i = 0; i < total; i++) {
+    const base = i * tam;
+    const esSO = base < config.memoriaSO;
+    marcos.push({
+      indice: i,
+      base,
+      libre: !esSO,
+      reservadoSO: esSO,
+      procesoId: null,
+      pagina: null,
+    });
+  }
 }
 
 /* 
@@ -295,6 +350,19 @@ function agregarPrograma(
   });
 }
 
+// descompone un programa en sus segmentos lógicos (en bytes). Se usa tanto
+// para segmentación como para paginación. El encabezado del ejecutable se
+// suma al segmento de código.
+function obtenerSegmentos(prog) {
+  return [
+    { nombre: ".text", abrev: "C", tamano: prog.codigo + ENCABEZADO_EXE },
+    { nombre: ".data", abrev: "DI", tamano: prog.datosIni },
+    { nombre: ".bss", abrev: "DN", tamano: prog.datosNoIni },
+    { nombre: ".stack", abrev: "P", tamano: config.pila },
+    { nombre: ".heap", abrev: "H", tamano: config.monticulo },
+  ].filter((s) => s.tamano > 0);
+}
+
 /* 
    algoritmos de asignación
  */
@@ -317,15 +385,6 @@ function iniciarPrograma(idPrograma) {
   const programa = programas.find((p) => p.id === idPrograma);
   if (!programa) return;
 
-  const candidatas = particiones.filter(
-    (p) => p.estado === "libre" && p.tamano >= programa.memAUsar,
-  );
-  const elegida = elegirParticionLibre(candidatas);
-  if (!elegida) {
-    mostrarMensaje("No hay espacio suficiente para " + programa.nombre + ".");
-    return;
-  }
-
   // nueva instancia en ejecución derivada de la plantilla
   const proceso = {
     id: ++idProcesos,
@@ -339,8 +398,35 @@ function iniciarPrograma(idPrograma) {
     particionId: null,
     base: null,
     limite: null,
+    segmentos: null, // segmentación
+    paginas: null, // paginación
   };
+
+  let ok;
+  if (config.tipo === "segmentacion") {
+    ok = asignarSegmentacion(proceso, programa);
+  } else if (config.tipo === "paginacion") {
+    ok = asignarPaginacion(proceso, programa);
+  } else {
+    ok = asignarContiguo(proceso, programa);
+  }
+
+  if (!ok) return; // no se pudo asignar; el mensaje ya se mostró
+
   procesos.push(proceso);
+  renderizarTodo();
+}
+
+// asignación contigua clásica (fija / variable / dinámica)
+function asignarContiguo(proceso, programa) {
+  const candidatas = particiones.filter(
+    (p) => p.estado === "libre" && p.tamano >= programa.memAUsar,
+  );
+  const elegida = elegirParticionLibre(candidatas);
+  if (!elegida) {
+    mostrarMensaje("No hay espacio suficiente para " + programa.nombre + ".");
+    return false;
+  }
 
   if (config.tipo === "dinamica") {
     // Asegurar orden espacial antes de calcular sobrantes e índices
@@ -366,27 +452,146 @@ function iniciarPrograma(idPrograma) {
   proceso.particionId = elegida.id;
   proceso.base = elegida.base;
   proceso.limite = elegida.base + elegida.tamano - 1;
-
-  renderizarTodo();
+  return true;
 }
 
-// detiene una instancia concreta (por id de proceso) y libera su partición
+// SEGMENTACIÓN: cada segmento se ubica por separado en un hueco libre.
+// La memoria se modela con el mismo arreglo `particiones` (huecos libres y
+// bloques ocupados), igual que en dinámica, pero un proceso ocupa varios
+// bloques (uno por segmento).
+function asignarSegmentacion(proceso, programa) {
+  const segmentos = obtenerSegmentos(programa);
+
+  // Se colocan los segmentos uno a uno sobre el estado real de la memoria,
+  // usando el algoritmo de ajuste. Si algún segmento no cabe, se revierte
+  // todo lo asignado a este proceso para no dejar una carga parcial.
+  proceso.segmentos = [];
+
+  for (const seg of segmentos) {
+    particiones.sort((a, b) => a.base - b.base);
+    const candidatas = particiones.filter(
+      (p) => p.estado === "libre" && p.tamano >= seg.tamano,
+    );
+    const hueco = elegirParticionLibre(candidatas);
+
+    if (!hueco) {
+      // no cabe: revertir los segmentos ya colocados de este proceso
+      revertirSegmentos(proceso);
+      mostrarMensaje(
+        "No hay hueco para el segmento " +
+          seg.nombre +
+          " de " +
+          programa.nombre +
+          ".",
+      );
+      return false;
+    }
+
+    const sobrante = hueco.tamano - seg.tamano;
+    hueco.tamano = seg.tamano;
+    hueco.estado = "ocupada";
+    hueco.procesoId = proceso.id;
+    hueco.segmento = seg.nombre;
+
+    proceso.segmentos.push({
+      nombre: seg.nombre,
+      abrev: seg.abrev,
+      base: hueco.base,
+      limite: hueco.base + seg.tamano - 1,
+      tamano: seg.tamano,
+      particionId: hueco.id,
+    });
+
+    if (sobrante > 0) {
+      const posicion = particiones.indexOf(hueco) + 1;
+      particiones.splice(
+        posicion,
+        0,
+        crearParticion(hueco.base + hueco.tamano, sobrante),
+      );
+    }
+  }
+  return true;
+}
+
+// libera los bloques ya asignados a un proceso en segmentación (rollback
+// cuando la asignación no se pudo completar)
+function revertirSegmentos(proceso) {
+  particiones.forEach((p) => {
+    if (p.procesoId === proceso.id) {
+      p.estado = "libre";
+      p.procesoId = null;
+      p.segmento = null;
+    }
+  });
+  proceso.segmentos = [];
+  fusionarHuecosAdyacentes();
+}
+
+// PAGINACIÓN: el proceso se parte en páginas del tamaño de marco y cada
+// página va a cualquier marco libre (no contiguo). No usa algoritmo de ajuste.
+function asignarPaginacion(proceso, programa) {
+  const tamPagina = config.tamPagina;
+  // número total de páginas que necesita el proceso completo
+  const numPaginas = Math.ceil(programa.memAUsar / tamPagina);
+
+  const marcosLibres = marcos.filter((m) => m.libre);
+  if (marcosLibres.length < numPaginas) {
+    mostrarMensaje(
+      "No hay marcos suficientes para " +
+        programa.nombre +
+        " (necesita " +
+        numPaginas +
+        ", libres " +
+        marcosLibres.length +
+        ").",
+    );
+    return false;
+  }
+
+  proceso.paginas = [];
+  for (let i = 0; i < numPaginas; i++) {
+    const marco = marcosLibres[i];
+    marco.libre = false;
+    marco.procesoId = proceso.id;
+    marco.pagina = i;
+    proceso.paginas.push({ pagina: i, marco: marco.indice, presente: true });
+  }
+  return true;
+}
+
+// detiene una instancia concreta (por id de proceso) y libera su memoria
 function detenerProceso(id) {
   const proceso = procesos.find((p) => p.id === id);
   if (!proceso) return;
 
-  const particion = particiones.find((p) => p.id === proceso.particionId);
-  if (particion) {
-    particion.estado = "libre";
-    particion.procesoId = null;
+  if (config.tipo === "paginacion") {
+    // liberar todos los marcos ocupados por el proceso
+    marcos.forEach((m) => {
+      if (m.procesoId === id) {
+        m.libre = true;
+        m.procesoId = null;
+        m.pagina = null;
+      }
+    });
+  } else {
+    // fija/variable/dinámica/segmentación: liberar los bloques del proceso.
+    // En segmentación un proceso ocupa varios bloques; en el resto, uno.
+    particiones.forEach((p) => {
+      if (p.procesoId === id) {
+        p.estado = "libre";
+        p.procesoId = null;
+        p.segmento = null;
+      }
+    });
   }
 
   // la instancia desaparece al detenerse
   procesos = procesos.filter((p) => p.id !== id);
 
-  if (config.tipo === "dinamica") {
+  if (config.tipo === "dinamica" || config.tipo === "segmentacion") {
     fusionarHuecosAdyacentes();
-    if (config.compactacion) compactarMemoria();
+    if (config.tipo === "dinamica" && config.compactacion) compactarMemoria();
   }
 
   renderizarTodo();
@@ -493,8 +698,17 @@ function renderizarProcesos() {
     instancias.forEach((inst, i) => {
       const subfila = document.createElement("tr");
       subfila.className = "fila-instancia";
+      // la descripción de ubicación depende del método de gestión
+      let ubicacion;
+      if (config.tipo === "segmentacion") {
+        ubicacion = `${(inst.segmentos || []).length} segmentos`;
+      } else if (config.tipo === "paginacion") {
+        ubicacion = `${(inst.paginas || []).length} páginas`;
+      } else {
+        ubicacion = `partición P${inst.particionId} · ${aHex(inst.base)}–${aHex(inst.limite)}`;
+      }
       subfila.innerHTML = `
-        <td colspan="6">↳ Instancia #${i + 1} · partición P${inst.particionId} · ${aHex(inst.base)}–${aHex(inst.limite)}</td>
+        <td colspan="6">↳ Instancia #${i + 1} (PID ${inst.id}) · ${ubicacion}</td>
         <td><span class="insignia insignia-ocupada">Ejecutando</span></td>
         <td class="celda-acciones"><button class="boton-pequeno" onclick="detenerProceso(${inst.id})">Detener</button></td>`;
       cuerpo.appendChild(subfila);
@@ -518,6 +732,12 @@ function renderizarParticiones() {
         part.estado === "ocupada"
           ? '<span class="insignia insignia-ocupada">Ocupada</span>'
           : '<span class="insignia insignia-libre">Libre</span>';
+      // en segmentación, el contenido indica el proceso y el segmento
+      let contenido = "-";
+      if (proceso) {
+        contenido = proceso.nombre;
+        if (part.segmento) contenido += ` · ${part.segmento}`;
+      }
       const fila = document.createElement("tr");
       fila.innerHTML = `
       <td>P${part.id}</td>
@@ -525,9 +745,129 @@ function renderizarParticiones() {
       <td class="direccion">${aHex(part.base + part.tamano - 1)}</td>
       <td>${aKiB(part.tamano)} KiB</td>
       <td>${insignia}</td>
-      <td>${proceso ? proceso.nombre : "-"}</td>`;
+      <td>${contenido}</td>`;
       cuerpo.appendChild(fila);
     });
+}
+
+/* 
+   render: tabla de marcos (paginación)
+ */
+function renderizarMarcos() {
+  const cuerpo = document.getElementById("cuerpoTablaMarcos");
+  if (!cuerpo) return;
+  cuerpo.innerHTML = "";
+
+  const libres = marcos.filter((m) => m.libre).length;
+  const ocupados = marcos.filter((m) => !m.libre && !m.reservadoSO).length;
+  const reservados = marcos.filter((m) => m.reservadoSO).length;
+  const resumen = document.getElementById("resumenMarcos");
+  if (resumen)
+    resumen.textContent = `${marcos.length} marcos de ${aKiB(config.tamPagina)} KiB · ${libres} libres · ${ocupados} ocupados · ${reservados} del SO`;
+
+  marcos.forEach((m) => {
+    const proceso = m.procesoId
+      ? procesos.find((p) => p.id === m.procesoId)
+      : null;
+    let estado, contenido;
+    if (m.reservadoSO) {
+      estado = '<span class="insignia insignia-detenido">SO</span>';
+      contenido = "Sistema operativo";
+    } else if (m.libre) {
+      estado = '<span class="insignia insignia-libre">Libre</span>';
+      contenido = "-";
+    } else {
+      estado = '<span class="insignia insignia-ocupada">Ocupado</span>';
+      contenido = proceso
+        ? `${proceso.nombre} · pág ${m.pagina}`
+        : `pág ${m.pagina}`;
+    }
+    const fila = document.createElement("tr");
+    fila.innerHTML = `
+      <td>${m.indice}</td>
+      <td class="direccion">${aHex(m.base)}</td>
+      <td>${estado}</td>
+      <td>${contenido}</td>`;
+    cuerpo.appendChild(fila);
+  });
+}
+
+/* 
+   render: tablas por proceso (segmentos / páginas)
+ */
+function renderizarTablasProceso() {
+  const panel = document.getElementById("panelTablasProceso");
+  const contenedor = document.getElementById("contenedorTablasProceso");
+  const titulo = document.getElementById("tituloTablasProceso");
+  if (!panel || !contenedor) return;
+
+  const esSeg = config.tipo === "segmentacion";
+  const esPag = config.tipo === "paginacion";
+
+  if (!esSeg && !esPag) {
+    panel.classList.add("oculto");
+    return;
+  }
+  panel.classList.remove("oculto");
+  if (titulo)
+    titulo.textContent = esSeg
+      ? "Tablas de segmentos por proceso"
+      : "Tablas de páginas por proceso";
+
+  contenedor.innerHTML = "";
+  if (procesos.length === 0) {
+    contenedor.innerHTML =
+      '<p class="nota-panel">No hay procesos en ejecución.</p>';
+    return;
+  }
+
+  procesos.forEach((proc) => {
+    const bloque = document.createElement("div");
+    bloque.className = "tabla-proceso";
+    if (esSeg) {
+      const filas = (proc.segmentos || [])
+        .map(
+          (s) => `
+          <tr>
+            <td>${s.nombre}</td>
+            <td>${aKiB(s.tamano)} KiB</td>
+            <td class="direccion">${aHex(s.base)}</td>
+            <td class="direccion">${aHex(s.limite)}</td>
+          </tr>`,
+        )
+        .join("");
+      bloque.innerHTML = `
+        <h3 class="titulo-tabla-proceso">${proc.nombre} <span class="pid">(PID ${proc.id})</span></h3>
+        <table>
+          <thead>
+            <tr><th>Segmento</th><th>Tamaño</th><th>Base</th><th>Límite</th></tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>`;
+    } else {
+      const filas = (proc.paginas || [])
+        .map((pg) => {
+          const marco = marcos.find((m) => m.indice === pg.marco);
+          return `
+          <tr>
+            <td>${pg.pagina} <span class="hex-suave">(0x${pg.pagina.toString(16).toUpperCase()})</span></td>
+            <td>${pg.marco} <span class="hex-suave">(0x${pg.marco.toString(16).toUpperCase()})</span></td>
+            <td class="direccion">${marco ? aHex(marco.base) : "-"}</td>
+            <td><span class="insignia insignia-libre">Presente</span></td>
+          </tr>`;
+        })
+        .join("");
+      bloque.innerHTML = `
+        <h3 class="titulo-tabla-proceso">${proc.nombre} <span class="pid">(PID ${proc.id})</span></h3>
+        <table>
+          <thead>
+            <tr><th>Página</th><th>Marco</th><th>Dir. base</th><th>Presente</th></tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>`;
+    }
+    contenedor.appendChild(bloque);
+  });
 }
 
 /* 
@@ -537,6 +877,15 @@ function renderizarMapaMemoria() {
   const contenedor = document.getElementById("mapaMemoria");
   if (!contenedor) return;
   contenedor.innerHTML = "";
+
+  // paginación: rejilla de marcos de igual tamaño
+  if (config.tipo === "paginacion") {
+    renderizarMapaMarcos(contenedor);
+    return;
+  }
+
+  // resto: bloques verticales proporcionales
+  contenedor.classList.remove("mapa-rejilla");
 
   const bloqueSO = document.createElement("div");
   bloqueSO.className = "bloque-mapa bloque-so";
@@ -554,15 +903,69 @@ function renderizarMapaMemoria() {
         "bloque-mapa " +
         (part.estado === "ocupada" ? "bloque-ocupado" : "bloque-libre");
       bloque.style.flex = part.tamano / MEMORIA_TOTAL;
-      const etiqueta = part.estado === "ocupada" ? proceso.nombre : "Libre";
+      // en segmentación, etiquetar con proceso + segmento
+      let etiqueta = "Libre";
+      if (part.estado === "ocupada" && proceso) {
+        etiqueta = part.segmento
+          ? `${proceso.nombre} ${part.segmento}`
+          : proceso.nombre;
+      }
       bloque.innerHTML = `<div class="direcciones"><span>${aHex(part.base)}</span><span>${aHex(part.base + part.tamano - 1)}</span></div><span>${etiqueta}</span>`;
       contenedor.appendChild(bloque);
     });
 }
 
+// mapa en rejilla para paginación: un recuadro por marco
+function renderizarMapaMarcos(contenedor) {
+  contenedor.classList.add("mapa-rejilla");
+  marcos.forEach((m) => {
+    const proceso = m.procesoId
+      ? procesos.find((p) => p.id === m.procesoId)
+      : null;
+    const celda = document.createElement("div");
+    let clase = "celda-marco";
+    if (m.reservadoSO) clase += " marco-so";
+    else if (m.libre) clase += " marco-libre";
+    else clase += " marco-ocupado";
+    celda.className = clase;
+    const etiqueta = m.reservadoSO
+      ? "SO"
+      : m.libre
+        ? ""
+        : proceso
+          ? `${proceso.id}:${m.pagina}`
+          : m.pagina;
+    celda.title = m.reservadoSO
+      ? `Marco ${m.indice} · ${aHex(m.base)} · SO`
+      : m.libre
+        ? `Marco ${m.indice} · ${aHex(m.base)} · libre`
+        : `Marco ${m.indice} · ${aHex(m.base)} · ${proceso ? proceso.nombre : ""} página ${m.pagina}`;
+    celda.textContent = etiqueta;
+    contenedor.appendChild(celda);
+  });
+}
+
+// muestra u oculta los paneles según el tipo de gestión activo
+function actualizarVisibilidadPaneles() {
+  const esPag = config.tipo === "paginacion";
+  document.getElementById("panelMarcos")?.classList.toggle("oculto", !esPag);
+  // en paginación el panel de particiones/huecos no aplica
+  document.getElementById("panelParticiones")?.classList.toggle("oculto", esPag);
+
+  const titulo = document.getElementById("tituloPanelParticiones");
+  if (titulo)
+    titulo.textContent =
+      config.tipo === "segmentacion"
+        ? "Huecos y segmentos en memoria"
+        : "Estado de particiones";
+}
+
 function renderizarTodo() {
+  actualizarVisibilidadPaneles();
   renderizarProcesos();
   renderizarParticiones();
+  renderizarMarcos();
+  renderizarTablasProceso();
   renderizarMapaMemoria();
 }
 
@@ -627,17 +1030,26 @@ function inicializarSimulacion() {
     fija: "Particiones fijas",
     variable: "Particiones variables",
     dinamica: "Particiones dinámicas",
+    segmentacion: "Segmentación",
+    paginacion: "Paginación",
   };
   const nombresAlgoritmo = {
     primer: "Primer ajuste",
     mejor: "Mejor ajuste",
     peor: "Peor ajuste",
   };
+  // el algoritmo aplica a variable, dinámica y segmentación
+  const usaAlgoritmo =
+    config.tipo === "variable" ||
+    config.tipo === "dinamica" ||
+    config.tipo === "segmentacion";
   let resumen = `<strong>${nombresTipo[config.tipo]}</strong> · SO: ${aKiB(config.memoriaSO)} KiB`;
-  if (config.tipo !== "fija")
+  if (usaAlgoritmo)
     resumen += ` · Algoritmo: ${nombresAlgoritmo[config.algoritmo]}`;
   if (config.tipo === "dinamica")
     resumen += ` · ${config.compactacion ? "Con compactación automática" : "Sin compactación"}`;
+  if (config.tipo === "paginacion")
+    resumen += ` · Página: ${aKiB(config.tamPagina)} KiB · ${marcos.length} marcos`;
 
   const resumenElem = document.getElementById("resumenConfig");
   if (resumenElem) resumenElem.innerHTML = resumen;
@@ -651,6 +1063,7 @@ function inicializarSimulacion() {
 // los programas agregados por el usuario (programasPersonalizados) se conserven
 function reiniciarSimulacion() {
   particiones = [];
+  marcos = [];
   procesos = [];
   programas = [];
   idParticiones = 0;
