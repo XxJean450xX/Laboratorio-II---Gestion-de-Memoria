@@ -334,3 +334,85 @@ tr:last-child td {
     height: 320px;
   }
 }
+
+/* acciones de la tabla de procesos */
+.celda-acciones {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.boton-eliminar {
+  background: var(--rojo-suave);
+  border-color: #f3c7c7;
+  color: var(--rojo);
+}
+.boton-eliminar:hover {
+  background: #f7d9d9;
+}
+
+/* sub-filas de instancias en ejecución */
+.fila-instancia td {
+  background: var(--acento-suave);
+  color: var(--texto-suave);
+  font-size: 12px;
+}
+.fila-instancia td:first-child {
+  padding-left: 14px;
+}
+
+/* ---------- tablas por proceso (segmentos / páginas) ---------- */
+#contenedorTablasProceso {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.tabla-proceso {
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--fondo);
+}
+.titulo-tabla-proceso {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.titulo-tabla-proceso .pid {
+  color: var(--texto-suave);
+  font-weight: 400;
+  font-size: 12px;
+}
+.hex-suave {
+  color: var(--texto-suave);
+  font-size: 11px;
+}
+
+/* ---------- indicador de ocupación de memoria ---------- */
+.barra-memoria {
+  position: relative;
+  height: 20px;
+  margin-top: 8px;
+  background: var(--gris-suave);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  overflow: hidden;
+  min-width: 340px;
+}
+.barra-memoria-relleno {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--acento);
+  transition: width 0.25s ease;
+}
+.barra-memoria-relleno.barra-llena {
+  background: var(--rojo);
+}
+.barra-memoria-texto {
+  position: relative;
+  display: block;
+  line-height: 20px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--texto);
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+}
