@@ -152,6 +152,10 @@
         <div>
           <h1 style="font-size: 18px">Simulador de gestión de memoria</h1>
           <p class="resumen-config" id="resumenConfig"></p>
+          <div class="barra-memoria" id="barraMemoria" title="Ocupación de la memoria de usuario">
+            <div class="barra-memoria-relleno" id="barraMemoriaRelleno"></div>
+            <span class="barra-memoria-texto" id="barraMemoriaTexto"></span>
+          </div>
         </div>
         <button id="botonReiniciar">Cambiar simulación</button>
       </div>
@@ -207,6 +211,13 @@
               <tbody id="cuerpoTablaParticiones"></tbody>
             </table>
           </div>
+          <p class="nota-panel oculto" id="notaSegmentacion">
+            El algoritmo de ajuste (primer/mejor/peor) solo cambia la ubicación
+            cuando existen varios huecos libres de distinto tamaño. Con la
+            memoria recién iniciada hay un solo hueco, así que los tres eligen
+            igual. Inicia varios procesos y detén algunos intermedios para
+            generar huecos y observar la diferencia.
+          </p>
         </div>
 
         <!-- tabla de marcos (solo paginación) -->

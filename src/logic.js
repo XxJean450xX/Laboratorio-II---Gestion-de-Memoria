@@ -904,7 +904,7 @@ function renderizarMapaMemoria() {
         (part.estado === "ocupada" ? "bloque-ocupado" : "bloque-libre");
       bloque.style.flex = part.tamano / MEMORIA_TOTAL;
       // en segmentación, etiquetar con proceso + segmento
-      let etiqueta = "Libre";
+      let etiqueta = `Libre (${aKiB(part.tamano)} KiB)`;
       if (part.estado === "ocupada" && proceso) {
         etiqueta = part.segmento
           ? `${proceso.nombre} ${part.segmento}`
@@ -933,8 +933,8 @@ function renderizarMapaMarcos(contenedor) {
       : m.libre
         ? ""
         : proceso
-          ? `${proceso.id}:${m.pagina}`
-          : m.pagina;
+          ? `P${proceso.id}·p${m.pagina}`
+          : `p${m.pagina}`;
     celda.title = m.reservadoSO
       ? `Marco ${m.indice} · ${aHex(m.base)} · SO`
       : m.libre
@@ -958,6 +958,38 @@ function actualizarVisibilidadPaneles() {
       config.tipo === "segmentacion"
         ? "Huecos y segmentos en memoria"
         : "Estado de particiones";
+
+  // nota explicativa sobre el algoritmo, solo en segmentación
+  document
+    .getElementById("notaSegmentacion")
+    ?.classList.toggle("oculto", config.tipo !== "segmentacion");
+}
+
+// indicador de ocupación de la memoria de usuario (todos los métodos)
+function renderizarIndicadorMemoria() {
+  const relleno = document.getElementById("barraMemoriaRelleno");
+  const texto = document.getElementById("barraMemoriaTexto");
+  if (!relleno || !texto) return;
+
+  const disponible = MEMORIA_TOTAL - config.memoriaSO;
+  let usada;
+
+  if (config.tipo === "paginacion") {
+    const marcosUsuario = marcos.filter((m) => !m.reservadoSO);
+    const ocupados = marcosUsuario.filter((m) => !m.libre).length;
+    usada = ocupados * config.tamPagina;
+  } else {
+    // suma del tamaño de los bloques ocupados
+    usada = particiones
+      .filter((p) => p.estado === "ocupada")
+      .reduce((a, p) => a + p.tamano, 0);
+  }
+
+  const libre = disponible - usada;
+  const pct = disponible > 0 ? Math.round((usada / disponible) * 100) : 0;
+  relleno.style.width = pct + "%";
+  relleno.classList.toggle("barra-llena", pct >= 90);
+  texto.textContent = `Memoria de usuario: ${aKiB(usada)} / ${aKiB(disponible)} KiB usada (${pct}%) · ${aKiB(libre)} KiB libres`;
 }
 
 function renderizarTodo() {
@@ -967,6 +999,7 @@ function renderizarTodo() {
   renderizarMarcos();
   renderizarTablasProceso();
   renderizarMapaMemoria();
+  renderizarIndicadorMemoria();
 }
 
 /* 
