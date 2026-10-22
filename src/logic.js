@@ -13,6 +13,9 @@ let particiones = [];
 let procesos = [];
 let idParticiones = 0;
 let idProcesos = 0;
+// definiciones (en KiB) de los programas que agrega el usuario; persisten
+// aunque se reinicie la simulación o se cambie el tipo de gestión de memoria
+let programasPersonalizados = [];
 
 /* 
    utilidades
@@ -253,6 +256,12 @@ function crearProcesosPrecargados() {
   base.forEach((p) =>
     agregarProceso(p.nombre, p.codigo, p.datosIni, p.datosNoIni, true),
   );
+
+  // recrear los programas que el usuario agregó en sesiones anteriores
+  // (se recalcula memAUsar con la pila/montículo de la config actual)
+  programasPersonalizados.forEach((p) =>
+    agregarProceso(p.nombre, p.codigo, p.datosIni, p.datosNoIni, false),
+  );
 }
 
 function agregarProceso(
@@ -363,6 +372,30 @@ function detenerProceso(id) {
   renderizarTodo();
 }
 
+function eliminarProceso(id) {
+  const proceso = procesos.find((p) => p.id === id);
+  if (!proceso || proceso.precargado) return;
+
+  // si está ejecutando, liberar primero su partición
+  if (proceso.estado === "ejecutando") detenerProceso(id);
+
+  // quitarlo de la lista activa
+  procesos = procesos.filter((p) => p.id !== id);
+
+  // quitarlo del almacén persistente para que no reaparezca al reiniciar.
+  // se busca por los campos originales en KiB con los que fue creado
+  const indice = programasPersonalizados.findIndex(
+    (pp) =>
+      pp.nombre === proceso.nombre &&
+      aBytes(pp.codigo) === proceso.codigo &&
+      aBytes(pp.datosIni) === proceso.datosIni &&
+      aBytes(pp.datosNoIni) === proceso.datosNoIni,
+  );
+  if (indice !== -1) programasPersonalizados.splice(indice, 1);
+
+  renderizarTodo();
+}
+
 function fusionarHuecosAdyacentes() {
   particiones.sort((a, b) => a.base - b.base);
   particiones = particiones.reduce((acc, curr) => {
@@ -416,6 +449,10 @@ function renderizarProcesos() {
       p.estado === "ejecutando"
         ? `<button class="boton-pequeno" onclick="detenerProceso(${p.id})">Detener</button>`
         : `<button class="boton-pequeno" onclick="iniciarProceso(${p.id})">Iniciar</button>`;
+    // solo los programas agregados por el usuario se pueden eliminar
+    const botonEliminar = p.precargado
+      ? ""
+      : `<button class="boton-pequeno boton-eliminar" onclick="eliminarProceso(${p.id})">Eliminar</button>`;
     fila.innerHTML = `
       <td>${p.nombre}${p.precargado ? '<div class="etiqueta-precargado">precargado</div>' : ""}</td>
       <td>${aKiB(p.codigo)}</td>
@@ -424,7 +461,7 @@ function renderizarProcesos() {
       <td>${aKiB(p.memInicial)}</td>
       <td>${aKiB(p.memAUsar)}</td>
       <td>${insignia}</td>
-      <td>${boton}</td>`;
+      <td class="celda-acciones">${boton}${botonEliminar}</td>`;
     cuerpo.appendChild(fila);
   });
 }
@@ -535,6 +572,9 @@ document
       return;
     }
 
+    // guardar la definición para que persista al reiniciar o cambiar de tipo
+    programasPersonalizados.push({ nombre, codigo, datosIni, datosNoIni });
+
     agregarProceso(nombre, codigo, datosIni, datosNoIni, false);
     renderizarProcesos();
     modal?.classList.add("oculto");
@@ -571,12 +611,29 @@ function inicializarSimulacion() {
   renderizarTodo();
 }
 
+// volver a la pantalla de configuración sin recargar la página, de modo que
+// los programas agregados por el usuario (programasPersonalizados) se conserven
+function reiniciarSimulacion() {
+  particiones = [];
+  procesos = [];
+  idParticiones = 0;
+  idProcesos = 0;
+  config = {};
+
+  document.getElementById("vistaDashboard")?.classList.add("oculto");
+  document.getElementById("vistaConfiguracion")?.classList.remove("oculto");
+
+  const errorBox = document.getElementById("errorConfig");
+  if (errorBox) errorBox.textContent = "";
+}
+
 document
   .getElementById("botonReiniciar")
-  ?.addEventListener("click", () => location.reload());
+  ?.addEventListener("click", reiniciarSimulacion);
 
 /* 
    Exposición explícita al scope global para listeners de HTML
  */
 window.iniciarProceso = iniciarProceso;
 window.detenerProceso = detenerProceso;
+window.eliminarProceso = eliminarProceso;

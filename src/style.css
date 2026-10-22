@@ -334,3 +334,18 @@ tr:last-child td {
     height: 320px;
   }
 }
+
+/* acciones de la tabla de procesos */
+.celda-acciones {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.boton-eliminar {
+  background: var(--rojo-suave);
+  border-color: #f3c7c7;
+  color: var(--rojo);
+}
+.boton-eliminar:hover {
+  background: #f7d9d9;
+}
