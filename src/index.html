@@ -24,6 +24,8 @@
             Particiones estáticas de tamaño variable
           </option>
           <option value="dinamica">Particiones dinámicas</option>
+          <option value="segmentacion">Segmentación</option>
+          <option value="paginacion">Paginación</option>
         </select>
       </div>
 
@@ -91,7 +93,38 @@
         </div>
       </div>
 
-      <!-- algoritmo de asignación (variable y dinámica) -->
+      <!-- sección: segmentación -->
+      <div id="seccionSegmentacion" class="seccion-tipo oculto">
+        <h3>Segmentación</h3>
+        <p class="intro" style="margin-bottom: 0">
+          Cada proceso se divide en segmentos lógicos (código, datos
+          inicializados, datos no inicializados, pila y montículo). Cada
+          segmento se ubica por separado en un hueco libre usando el algoritmo
+          de asignación.
+        </p>
+      </div>
+
+      <!-- sección: paginación -->
+      <div id="seccionPaginacion" class="seccion-tipo oculto">
+        <h3>Paginación</h3>
+        <div class="campo">
+          <label for="tamPagina">Tamaño de página / marco (KiB)</label>
+          <select id="tamPagina">
+            <option value="4">4 KiB</option>
+            <option value="8">8 KiB</option>
+            <option value="16">16 KiB</option>
+            <option value="32">32 KiB</option>
+            <option value="64" selected>64 KiB</option>
+          </select>
+        </div>
+        <p class="intro" style="margin-bottom: 0">
+          La memoria se divide en marcos del mismo tamaño. Cada proceso se parte
+          en páginas que se colocan en marcos libres (no necesariamente
+          contiguos). No aplica algoritmo de ajuste.
+        </p>
+      </div>
+
+      <!-- algoritmo de asignación (variable, dinámica y segmentación) -->
       <div id="seccionAlgoritmo" class="seccion-tipo">
         <div class="campo">
           <label for="algoritmoAsignacion">Algoritmo de asignación</label>
@@ -156,22 +189,41 @@
           </button>
         </div>
 
-        <!-- particiones -->
-        <div class="panel">
-          <h2>Estado de particiones</h2>
+        <!-- particiones / huecos (fija, variable, dinámica, segmentación) -->
+        <div class="panel" id="panelParticiones">
+          <h2 id="tituloPanelParticiones">Estado de particiones</h2>
           <div class="contenedor-tabla">
             <table>
               <thead>
                 <tr>
-                  <th>PID</th>
-                  <th>Dirección Base</th>
-                  <th>Dirección BCP</th>
-                  <th>Capacidad</th>
+                  <th>ID</th>
+                  <th>Inicio</th>
+                  <th>Fin</th>
+                  <th>Tamaño</th>
                   <th>Estado</th>
-                  <th>Proceso</th>
+                  <th>Contenido</th>
                 </tr>
               </thead>
               <tbody id="cuerpoTablaParticiones"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- tabla de marcos (solo paginación) -->
+        <div class="panel oculto" id="panelMarcos">
+          <h2>Tabla de marcos</h2>
+          <p class="nota-panel" id="resumenMarcos"></p>
+          <div class="contenedor-tabla">
+            <table>
+              <thead>
+                <tr>
+                  <th>Marco</th>
+                  <th>Dirección base</th>
+                  <th>Estado</th>
+                  <th>Proceso · página</th>
+                </tr>
+              </thead>
+              <tbody id="cuerpoTablaMarcos"></tbody>
             </table>
           </div>
         </div>
@@ -181,6 +233,12 @@
           <h2>Mapa de memoria</h2>
           <div id="mapaMemoria"></div>
         </div>
+      </div>
+
+      <!-- tablas específicas por proceso (segmentación / paginación) -->
+      <div class="panel oculto" id="panelTablasProceso" style="margin-top: 16px">
+        <h2 id="tituloTablasProceso">Tablas por proceso</h2>
+        <div id="contenedorTablasProceso"></div>
       </div>
     </div>
 

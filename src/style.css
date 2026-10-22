@@ -359,3 +359,64 @@ tr:last-child td {
 .fila-instancia td:first-child {
   padding-left: 14px;
 }
+
+/* ---------- paginación: rejilla de marcos ---------- */
+#mapaMemoria.mapa-rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+  grid-auto-rows: 26px;
+  gap: 2px;
+  height: auto;
+  max-height: 520px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--fondo);
+}
+.celda-marco {
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  overflow: hidden;
+  color: var(--texto);
+  cursor: default;
+}
+.marco-libre {
+  background: var(--verde-suave);
+  color: var(--verde);
+}
+.marco-ocupado {
+  background: var(--acento);
+  color: #fff;
+}
+.marco-so {
+  background: #c7cdd6;
+  color: #4b5563;
+}
+
+/* ---------- tablas por proceso (segmentos / páginas) ---------- */
+#contenedorTablasProceso {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.tabla-proceso {
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--fondo);
+}
+.titulo-tabla-proceso {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.titulo-tabla-proceso .pid {
+  color: var(--texto-suave);
+  font-weight: 400;
+  font-size: 12px;
+}
+.hex-suave {
+  color: var(--texto-suave);
+  font-size: 11px;
+}
